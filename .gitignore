@@ -1,0 +1,26 @@
+# Môi trường và bộ nhớ đệm Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Dữ liệu sinh ra và mô hình lớn
+data/processed/
+outputs/models/*.joblib
+outputs/predictions/
+outputs/portfolio-demo/
+outputs/cleanup-smoke/
+outputs/dataset-audit.json
+outputs/docx-assets/
+outputs/docx-render/
+outputs/docx-render-word/
+
+# Tệp hệ điều hành / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

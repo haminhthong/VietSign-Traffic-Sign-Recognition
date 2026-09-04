@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Công cụ kiểm thử và kiểm tra chất lượng mã nguồn
+pytest>=8,<9
+ruff>=0.12,<1
