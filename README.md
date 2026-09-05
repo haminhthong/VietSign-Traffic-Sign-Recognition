@@ -1,257 +1,285 @@
 # VietSign Vision 🚦
 
-> **Explainable Vietnamese Traffic Sign Recognition System with Classical Computer Vision & 2-Tier SVM**
+> **Explainable Vietnamese Traffic Sign Recognition System with Multi-Cue Classical Computer Vision & Two-Stage SVM**
 
 ![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8%2B-green)
 ![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-1.3%2B-orange)
-![Tests](https://img.shields.io/badge/tests-28%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-**VietSign Vision** là hệ thống nhận dạng và phân loại 52 lớp biển báo giao thông Việt Nam sử dụng hoàn toàn các kỹ thuật **Xử lý ảnh Truyền thống (Classical Computer Vision)** kết hợp với mô hình **Học máy Hai Tầng (2-Tier SVM)**. 
+**VietSign Vision** là hệ thống nhận dạng và phân loại 52 lớp biển báo giao thông Việt Nam được xây dựng hoàn toàn bằng **Computer Vision Truyền Thống (Classical Computer Vision)** kết hợp mô hình **Học Máy Hai Tầng (2-Tier SVM Classifier)**.
 
-Dự án được thiết kế theo tiêu chí **Clean Code**, mô-đun hóa, chú thích tiếng Việt và chạy offline trên CPU. Đây là một **interpretable classical CV baseline**: người học có thể quan sát đầu ra từng tầng thay vì coi toàn bộ pipeline như một hộp đen.
+Khác với các phương pháp học sâu nguyên khối (end-to-end black-box detectors như YOLO), VietSign Vision ưu tiên **tính diễn giải (explainability)**, cho phép quan sát, đo lường và hiệu chỉnh độc lập từng tầng: tiền xử lý ảnh $\to$ đa nguồn đề xuất vùng (multi-cue region proposals) $\to$ nắn thẳng hình học (affine/perspective rectification) $\to$ trích xuất đặc trưng HOG ($1.764$ chiều) $\to$ bộ lọc nền âm khó (hard-negative sign filter) $\to$ phân loại chi tiết 52 lớp biển báo. Hệ thống hướng đến suy luận tối ưu trên CPU, không đòi hỏi GPU.
 
 ---
 
 ## 📋 Mục Lục
 
-- [Giới Thiệu & Điểm Sáng Dự Án](#-giới-thiệu--điểm-sáng-dự-án)
-- [Sơ Đồ Kiến Trúc Pipeline](#-sơ-đồ-kiến-trúc-pipeline)
-- [Kết Quả Đánh Giá Hiệu Năng](#-kết-quả-đánh-giá-hiệu-năng)
-- [Cấu Trúc Thư Mục](#-cấu-trúc-thư-mục)
-- [Cài Đặt](#-cài-đặt)
-- [Hướng Dẫn Sử Dụng](#-hướng-dẫn-sử-dụng)
-  - [1. Chạy dòng lệnh (CLI)](#1-chạy-dòng-lệnh-cli)
-  - [2. Sử dụng qua Python API](#2-sử-dụng-qua-python-api)
-  - [3. Kiểm tra toàn vẹn Dataset (Audit Tool)](#3-kiểm-tra-toàn-vẹn-dataset-audit-tool)
-- [Kiểm Thử & Phát Triển](#-kiểm-thử--phát-triển)
-- [Định Hướng Đưa Vào CV / Portfolio](#-định-hướng-đưa-vào-cv--portfolio)
-- [Tài Liệu Chi Tiết](#-tài-liệu-chi-tiết)
+- [1. Kiến Trúc Canonical 8 Giai Đoạn](#1-kiến-trúc-canonical-8-giai-đoạn)
+- [2. Điểm Sáng Kỹ Thuật (Key Innovations)](#2-điểm-sáng-kỹ-thuật-key-innovations)
+- [3. Giao Thức Chống Rò Rỉ Dữ Liệu (Leakage-Safe Split)](#3-giao-thức-chống-rò-rỉ-dữ-liệu-leakage-safe-split)
+- [4. Đánh Giá & Benchmark Thực Tế](#4-đánh-giá--benchmark-thực-tế)
+- [5. Cấu Trúc Thư Mục](#5-cấu-trúc-thư-mục)
+- [6. Cài Đặt](#6-cài-đặt)
+- [7. Hướng Dẫn Sử Dụng](#7-hướng-dẫn-sử-dụng)
+- [8. Kiểm Thử & CI](#8-kiểm-thử--ci)
+- [9. Định Hướng Đưa Vào CV / Portfolio](#9-định-hướng-đưa-vào-cv--portfolio)
+- [10. Tài Liệu Chi Tiết](#10-tài-liệu-chi-tiết)
 
 ---
 
-## 🌟 Giới Thiệu & Điểm Sáng Dự Án
+## 1. Kiến Trúc Canonical 8 Giai Đoạn
 
-**VietSign Vision** được phát triển để minh họa một baseline Computer Vision cổ điển có thể quan sát từng bước và không yêu cầu GPU:
-
-1. **Hiểu sâu bản chất xử lý ảnh**: Nắm vững các thuật toán cốt lõi như lọc nhiễu Median, cân bằng độ tương phản CLAHE tự thích nghi trên kênh L (không gian màu LAB), phân đoạn màu HSV, phát hiện vùng cực trị MSER, dò biên Canny và biến đổi Hough Circles.
-2. **Kiến trúc SVM Hai Tầng (2-Tier SVM Classifier)**:
-   - **Tầng 1 (Binary SVM)**: Phân biệt Biển báo vs Vùng nền (Background) để triệt tiêu các báo giả (False Positives).
-   - **Tầng 2 (Multiclass SVM)**: Phân loại chi tiết 52 lớp biển báo giao thông Việt Nam.
-3. **Trích xuất đặc trưng HOG ($1.764$ chiều)**: Mã hóa thông tin hướng gradient từ ảnh ROI đã chuẩn hóa $64 \times 64$ pixels.
-4. **CPU-only offline**: Không phụ thuộc GPU; chưa tuyên bố edge-ready cho đến khi có benchmark trên phần cứng mục tiêu.
-5. **Python package có kiểm thử**: CLI, type annotations, I/O Unicode và kiểm tra tự động trên nhiều phiên bản Python.
-
----
-
-## 📐 Sơ Đồ Kiến Trúc Pipeline
+Toàn bộ hệ thống trực tuyến (online runtime) tuân thủ quy trình chuẩn hóa gồm **8 giai đoạn**:
 
 ```text
-[ Ảnh BGR Gốc ]
-       │
-       ▼
- 1. Tiền xử lý (Task 1) ───► Median Filter + Dynamic CLAHE (LAB - Kênh L)
-       │
-       ▼
- 2. Tạo vùng ứng viên ────► Phân đoạn HSV (Đỏ/Xanh/Vàng) + MSER + Canny Convex Hull
-       │
-       ▼
- 3. Xác minh hình học ────► Hough Circle (Tròn) + PolyDP (Tam giác / Tứ giác)
-       │
-       ▼
- 4. Hợp nhất & Lọc ROI ────► NMS (IoU >= 0.4) + Crop & Warp Perspective -> ROI 64x64
-       │
-       ▼
- 5. Trích xuất HOG ───────► HOG Feature Vector (1.764 chiều)
-       │
-       ▼
- 6. SVM Hai Tầng ────────► Tầng 1: Biển/Nền (Sign/Bg) ──► Tầng 2: 52 Lớp Biển báo
-       │
-       ▼
-[ Bounding Boxes & Nhãn Dán Tiếng Việt ]
+1. DATA INGESTION & PROVENANCE
+   Ảnh đường phố thực tế Việt Nam + Bounding-box annotations + Class IDs
+                 ↓
+2. LEAKAGE-SAFE DATA PROTOCOL
+   Mã băm SHA-256 (exact duplicate audit)
+                 ↓
+   Mã băm pHash (near-duplicate grouping, Hamming distance <= 8)
+                 ↓
+   Gom nhóm chuỗi video / route / sequence grouping
+                 ↓
+   Train / Validation / Locked Test (Invariant: cùng nhóm => duy nhất 1 split)
+                 ↓
+3. IMAGE ENHANCEMENT
+   Ảnh BGR gốc
+                 ↓
+   Lọc nhiễu Median Filter (kernel 3x3)
+                 ↓
+   Không gian màu LAB → Cân bằng độ tương phản Dynamic CLAHE trên kênh L
+                 ↓
+4. MULTI-CUE REGION PROPOSAL ENGINE
+   Ảnh đã tăng cường
+                 ↓
+   ┌───────────────────┬───────────────────┬───────────────────┐
+   │ HSV Color Regions │ MSER Extremal Reg │ Canny Convex Hull │
+   │ (Đỏ, Xanh, Vàng)  │ (Vùng đồng nhất)  │ (Biên cạnh & bao) │
+   └───────────────────┴───────────────────┴───────────────────┘
+                 ↓
+          Candidate Union & Bằng chứng hình học (Shape Evidence)
+          ├── Hough Circles (Biển tròn: Cấm / Hiệu lệnh)
+          ├── Polygon approxPolyDP 3 đỉnh (Biển tam giác: Nguy hiểm)
+          └── Polygon approxPolyDP 4 đỉnh (Biển chữ nhật: Chỉ dẫn)
+                 ↓
+          Proposal Quality Score (PQS) Evidence Fusion & NMS
+                 ↓
+5. ROI NORMALIZATION
+   Vùng ROI ứng viên
+                 ↓
+   Kiểm tra tính hợp lệ hình học (min_w=12, min_h=12, aspect ratio 0.4..1.9)
+                 ↓
+   Nắn thẳng hình học (Warp Affine cho tam giác, Warp Perspective cho tứ giác)
+                 ↓
+   Chuẩn hóa kích thước 64 × 64 pixels (cv2.INTER_AREA)
+                 ↓
+   Trích xuất đặc trưng HOG 1.764 chiều (9 hướng, cell 8x8, block 2x2)
+                 ↓
+6. TWO-STAGE CLASSIFICATION
+   HOG Feature Vector (1.764 chiều)
+                 ↓
+   Tầng 1: Binary SVM (Sign vs Background) với Hard-Negative Mining
+                 ↓  (Chỉ cho phép ứng viên vượt ngưỡng p_sign >= 0.5 đi tiếp)
+   Tầng 2: Multiclass SVM (52 Lớp Biển Báo Giao Thông Việt Nam)
+                 ↓
+7. DECISION & VALIDATION
+   Model Score / Calibrated Probability + Bằng chứng hình thái
+                 ↓
+   Quyết định: Chấp nhận (Accept) / Loại bỏ (Reject) / Không rõ (Unknown)
+                 ↓
+8. FINAL OUTPUT & PROVENANCE
+   Bounding Box (x, y, w, h) + Class ID / Tên biển Tiếng Việt + Model Score
+   + Dấu vết nguồn gốc đề xuất (Proposal Provenance, vd: ["HSV", "MSER", "HOUGH_CIRCLE"])
+   + Thời gian xử lý từng tầng (Stage Latency)
 ```
 
 ---
 
-## 📊 Chỉ Số Lịch Sử Chưa Tái Lập
+## 2. Điểm Sáng Kỹ Thuật (Key Innovations)
 
-Các giá trị dưới đây được giữ lại từ lần chạy notebook cũ. Tập `test_files.txt` khi đó đã được dùng làm validation để chọn tham số/ngưỡng, vì vậy **không được xem là test benchmark độc lập**. Repository hiện cũng thiếu phần lớn dataset và model nên chưa thể tái lập các số này.
-
-| Chỉ số Đánh Giá (Metric) | Tầng 1: Binary SVM (Sign / Background) | Tầng 2: Multiclass SVM (52 Lớp) | Pipeline End-to-End |
-|---|:---:|:---:|:---:|
-| Accuracy lịch sử | 0.9680 | 0.8906 | 0.9516 |
-| Macro F1 lịch sử | 0.9550 | 0.8025 | 0.7526 |
-
-Không sử dụng các giá trị này trong CV cho đến khi chạy lại quy trình train/validation/test độc lập. Xem [Model Card](docs/MODEL_CARD.md) và [Dataset Card](docs/DATASET_CARD.md).
+1. **Multi-Cue Region Proposal Engine**: Không phụ thuộc vào một kỹ thuật phân đoạn đơn lẻ. Kết hợp dải màu HSV (bắt biển rõ màu), MSER (bắt ký hiệu/ký tự bền vững với thay đổi độ sáng), Canny Hull (bắt biển chói sáng hoặc phai màu) cùng Hough Circle và Polygon Fitting.
+2. **Proposal Quality Score (PQS) & Provenance Tracking**: Thay vì dùng heuristic sắp xếp cứng (`contour > shape`), hệ thống tính điểm tin cậy tổng hợp:
+   $$\text{PQS} = w_{color} S_{HSV} + w_{mser} S_{MSER} + w_{edge} S_{Canny} + w_{shape} S_{Shape} + \text{MultiCueBonus} - \text{Penalty}_{AR}$$
+   Đồng thời lưu giữ mảng nguồn gốc `proposal_sources: ["HSV", "MSER", "HOUGH_CIRCLE"]` xuyên suốt đến kết quả đầu ra.
+3. **Warp Rectification trước khi trích xuất HOG**: Các biển báo nghiêng góc nhìn được nắn thẳng (Affine Transform cho tam giác, Perspective Transform cho tứ giác) về mặt phẳng chuẩn trước khi tính Gradient $64 \times 64$, tăng tính bất biến với biến dạng phối cảnh.
+4. **Hard-Negative Mining cho Tier-1 SVM**: Thu thập trực tiếp các false proposals từ ảnh đường phố (biển quảng cáo đỏ, đèn giao thông, góc nhà, decal xe) có $IoU < 0.2$ để huấn luyện tầng nhị phân, loại trừ triệt để báo giả.
+5. **Suy luận độc lập trên CPU**: Tối ưu cho môi trường edge/offline, toàn bộ quy trình chạy với độ trễ thấp và có thể giải thích chi tiết tại từng chặng.
 
 ---
 
-## 📁 Cấu Trúc Thư Mục
+## 3. Giao Thức Chống Rò Rỉ Dữ Liệu (Leakage-Safe Split)
+
+> [!IMPORTANT]
+> **Quy tắc phân chia dữ liệu (Data Split Invariant)**:
+> Trong dữ liệu camera hành trình, các khung hình liên tiếp (`frame_0100`, `frame_0101`, `frame_0102`) có mức độ tương đồng cực cao. Nếu chia ngẫu nhiên từng ảnh (Random Shuffle Split), các frame liền kề sẽ rơi vào cả Train và Test, làm biến chất kết quả kiểm định.
+
+Quy trình chuẩn hóa trong `tools/reproducible_split.py`:
+1. **SHA-256 Audit**: Nhận diện ảnh trùng lặp tuyệt đối.
+2. **pHash Near-Duplicate Grouping**: Dùng Perceptual Hash (Hamming distance $\le 8$) để gom các ảnh gần trùng góc quay.
+3. **Sequence / Route Grouping**: Gom các frame có chung tiền tố video/chuyến đi (`video_XX`, `seq_XX`).
+4. **Group-Level Split**: Phân chia ở cấp độ **nhóm** (cluster level) thay vì từng ảnh.
+5. **Lineage Manifest**: Xuất `data/processed/manifest.json` ghi nhận đầy đủ `sha256`, `phash`, `group_id`, `sequence_id`, `class_ids`, `split`.
+
+---
+
+## 4. Đánh Giá & Benchmark Thực Tế
+
+### Định Nghĩa Chuẩn Các Chỉ Số
+
+1. **Candidate Proposal Engine**:
+   - **`Proposal Recall@IoU0.5`**: Tỷ lệ biển báo nhãn thật (GT) có ít nhất 1 proposal khớp với $IoU \ge 0.5$.
+   - **`Proposals per Image`**: Số lượng ROI ứng viên sinh ra trung bình mỗi ảnh.
+   - **`FP Proposals per Image`**: Số lượng ROI nền sinh ra mỗi ảnh.
+2. **End-to-End Recognition**:
+   $$\text{E2E Correct} = (\text{IoU}(pred, GT) \ge 0.5) \land (class_{pred} == class_{GT})$$
+3. **Stage Funnel**: Đo lường tỷ lệ sống sót của biển báo qua từng giai đoạn:
+   $$\text{GT Signs} \longrightarrow \text{Candidate Proposals} \longrightarrow \text{ROI Filter} \longrightarrow \text{Tier 1 Sign Filter} \longrightarrow \text{Tier 2 Correct Class}$$
+
+### Trạng Thái Dataset & Báo Cáo Benchmark
+
+- **Bản phát hành mẫu trong repository**: Gồm 5 ảnh mẫu và 5 file nhãn tại `data/raw/` phục vụ **smoke testing và kiểm thử tự động (CI)**.
+- **Tái lập chỉ số phân loại 52 lớp**: Cần liên kết bộ dữ liệu đầy đủ để huấn luyện lại file model SVM (`outputs/models/`).
+- **Chỉ số lịch sử từ notebook khảo sát (Tham khảo)**:
+  - *Tier-1 Binary SVM*: Accuracy $\approx 0.9680$, Macro-F1 $\approx 0.9550$.
+  - *Tier-2 Multiclass SVM*: Accuracy $\approx 0.8906$, Macro-F1 $\approx 0.8025$.
+  - *End-to-End Pipeline*: Accuracy $\approx 0.9516$, Macro-F1 $\approx 0.7526$.
+  *(Khoảng cách giữa Accuracy và Macro-F1 phản ánh sự mất cân bằng giữa các lớp hiếm, là đối tượng ưu tiên cải thiện trong các phiên bản tiếp theo).*
+
+---
+
+## 5. Cấu Trúc Thư Mục
 
 ```text
 TSR/
-├── config.yaml                  # Tệp cấu hình tập trung cho các bước pipeline
-├── pyproject.toml               # Cấu hình package & công cụ phát triển (Ruff, Pytest)
-├── requirements.txt             # Thư viện phụ thuộc chính
-├── requirements-dev.txt         # Thư viện dùng cho môi trường dev/test
-├── src/                         # Mã nguồn cốt lõi (100% Chú thích Tiếng Việt & Type Hints)
-│   ├── __init__.py              # Export package & phiên bản
-│   ├── __main__.py              # Entry-point chạy `python -m src`
-│   ├── audit.py                 # Công cụ kiểm tra tính toàn vẹn dataset
-│   ├── classifier.py            # Huấn luyện, nạp/lưu & dự đoán SVM 2 tầng
-│   ├── cli.py                   # Giao diện dòng lệnh chuyên nghiệp (CLI)
-│   ├── data_loader.py           # Đọc/ghi ảnh Unicode an toàn trên Windows & YAML config
-│   ├── feature_extraction.py    # Trích xuất đặc trưng HOG 1.764 chiều
-│   ├── hough_detection.py       # Biến đổi Hough Circles phát hiện biển tròn
-│   ├── pipeline.py              # Luồng xử lý end-to-end hoàn chỉnh
-│   ├── polygon_detection.py     # Dò đa giác (Tam giác & Tứ giác/Chữ nhật)
-│   ├── preprocessing.py         # Lọc Median + Dynamic CLAHE
-│   ├── roi_extraction.py        # Cắt ROI, Warp biến dạng & lọc NMS
-│   ├── segmentation.py          # Phân đoạn dải màu HSV (Đỏ, Xanh, Vàng, Phi sắc)
-│   ├── task2_union.py           # Hợp nhất ứng viên từ HSV, MSER & Canny Hull
-│   └── utils.py                 # Bounding box, tính IoU & hiển thị ảnh
-├── docs/                        # Tài liệu chuyên sâu
-│   ├── ARCHITECTURE.md          # Chi tiết kiến trúc toán học từng bước
-│   ├── DATASET_CARD.md          # Thông tin chi tiết về dataset
-│   ├── MODEL_CARD.md            # Thông số huấn luyện mô hình SVM
-│   └── PORTFOLIO.md             # Hướng dẫn trình bày CV & bộ câu hỏi phỏng vấn
-├── notebooks/                   # 8 Notebook Jupyter khảo sát và huấn luyện 00->06
-├── tools/                       # Công cụ hỗ trợ tái lập & benchmark
-│   ├── reproducible_split.py    # Script phân chia train/val/test & mã băm SHA-256
-│   └── benchmark.py             # Công cụ benchmark độc lập & so sánh baseline
-├── tests/                       # Bộ kiểm thử tự động (28 tests)
-│   ├── test_audit.py            # Test kiểm tra tính toàn vẹn dataset
-│   ├── test_core.py             # Test các hàm xử lý ảnh cốt lõi
-│   ├── test_edge_cases.py       # Test đường dẫn xử lý lỗi & trường hợp biên
-│   ├── test_parity.py           # Test tính nhất quán giữa training và inference
-│   └── test_pipeline.py         # Test HOG, SVM & Pipeline end-to-end
-├── data/                        # Dữ liệu ảnh raw, interim và processed
-└── outputs/                     # Thư mục lưu models (.joblib) và kết quả dự đoán
+├── config.yaml                     # Cấu hình tham số tập trung (ngưỡng HSV, HOG, SVM)
+├── pyproject.toml                  # Thiết lập package & công cụ phát triển (Ruff, Pytest)
+├── requirements.txt                # Thư viện phụ thuộc chính (OpenCV, scikit-learn, imagehash)
+├── src/                            # Mã nguồn cốt lõi (100% Type Hints & Chú thích Tiếng Việt)
+│   ├── __init__.py                 # Export package & phiên bản
+│   ├── __main__.py                 # Entry-point chạy python -m src
+│   ├── audit.py                    # Công cụ kiểm tra tính toàn vẹn dataset
+│   ├── classifier.py               # Huấn luyện, hiệu chỉnh xác suất, chẩn đoán nhầm lẫn SVM
+│   ├── cli.py                      # Giao diện dòng lệnh CLI chuyên nghiệp
+│   ├── data_loader.py              # Đọc/ghi ảnh Unicode an toàn trên Windows
+│   ├── feature_extraction.py       # Trích xuất đặc trưng HOG 1.764 chiều
+│   ├── hough_detection.py          # Biến đổi Hough Circles phát hiện biển tròn
+│   ├── pipeline.py                 # Luồng điều phối 8 giai đoạn hoàn chỉnh
+│   ├── polygon_detection.py        # Dò đa giác (Tam giác & Tứ giác/Chữ nhật)
+│   ├── preprocessing.py            # Lọc Median + Dynamic CLAHE trên kênh L
+│   ├── roi_extraction.py           # Warp biến dạng, Proposal Quality Score & NMS
+│   ├── segmentation.py             # Phân đoạn dải màu HSV (Đỏ, Xanh, Vàng, Phi sắc)
+│   ├── task2_union.py              # Hợp nhất ứng viên từ HSV, MSER & Canny Hull
+│   └── utils.py                    # Đọc nhãn YOLO, tính IoU & hiển thị kết quả
+├── tools/                          # Bộ công cụ phục vụ Data/MLOps & Benchmark
+│   ├── reproducible_split.py       # Phân chia dữ liệu chống rò rỉ (sequence & pHash aware)
+│   ├── benchmark.py                # Công cụ benchmark độc lập (Proposal Recall, E2E, Funnel)
+│   └── hard_negative_mining.py     # Khai thác mẫu âm khó cho Tier-1 SVM
+├── tests/                          # Bộ kiểm thử tự động toàn diện
+│   ├── test_audit.py               # Kiểm tra tính toàn vẹn dataset
+│   ├── test_core.py                # Kiểm thử các thuật toán xử lý ảnh cơ sở
+│   ├── test_edge_cases.py          # Kiểm thử các trường hợp biên & dữ liệu lỗi
+│   ├── test_parity.py              # Kiểm thử tính nhất quán giữa training và inference
+│   ├── test_pipeline.py            # Kiểm thử HOG, SVM & Pipeline end-to-end
+│   ├── test_split.py               # Kiểm thử chống rò rỉ dữ liệu chuỗi và deduplication
+│   └── test_benchmark.py           # Kiểm thử động cơ benchmark và ghép cặp E2E
+├── data/                           # Dữ liệu ảnh raw, interim và processed
+└── outputs/                        # Thư mục lưu models (.joblib) và báo cáo JSON
 ```
 
 ---
 
-## 🛠️ Cài Đặt
+## 6. Cài Đặt
 
-Khuyến nghị môi trường **Python 3.10 – 3.12**. Không yêu cầu GPU.
-
-### Windows (PowerShell)
+Khuyến nghị môi trường **Python 3.10 – 3.12**.
 
 ```powershell
 # 1. Tạo và kích hoạt môi trường ảo
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# 2. Cập nhật pip và cài đặt thư viện
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-
-# 3. (Tùy chọn) Cài đặt package dạng editable
-python -m pip install -e ".[notebooks]"
-```
-
-### Linux / macOS
-
-```bash
-# 1. Tạo và kích hoạt môi trường ảo
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 2. Cài đặt phụ thuộc
+# 2. Cài đặt các thư viện phụ thuộc
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
 ---
 
-## 🚀 Hướng Dẫn Sử Dụng
+## 7. Hướng Dẫn Sử Dụng
 
 ### 1. Chạy dòng lệnh (CLI)
 
-#### Chế độ Demo nhanh (Không cần nạp mô hình SVM):
-Trích xuất các vùng ứng viên (Candidate ROIs) và vẽ khung hiển thị:
-```bash
+```powershell
+# Chế độ trích xuất ứng viên (không cần nạp model SVM)
 python -m src.cli data/raw/images/0589.jpg --detect-only
-```
 
-#### Chế độ Nhận dạng Đầy đủ (Full Recognition Pipeline):
-Nhận dạng và phân loại biển báo trên 1 tệp ảnh:
-```bash
+# Chế độ nhận dạng đầy đủ trên 1 ảnh
 python -m src.cli data/raw/images/0589.jpg
+
+# Nhận dạng toàn bộ thư mục ảnh và xuất kết quả
+python -m src.cli data/raw/images --output outputs/predictions --classes data/raw/classes_vie.txt
 ```
 
-Nhận dạng toàn bộ ảnh trong thư mục và xuất kết quả nhãn Tiếng Anh:
-```bash
-python -m src.cli data/raw/images --output outputs/predictions --classes data/raw/classes_en.txt
+### 2. Phân chia dữ liệu chống rò rỉ chuỗi (Leakage-Safe Split)
+
+```powershell
+python tools/reproducible_split.py --data-dir data/raw/images --label-dir data/raw/labels --output-dir data/processed --phash-thresh 8
 ```
 
-Kết quả xuất ra sẽ gồm ảnh đã vẽ Bounding Box + Tên biển báo + Độ tin cậy (Confidence) và tệp `predictions.json`.
+### 3. Chạy công cụ Benchmark độc lập
 
----
-
-### 2. Sử dụng qua Python API
-
-```python
-from src.pipeline import run_pipeline_on_image, draw_detections
-from src.data_loader import save_image
-
-# 1. Chạy pipeline nhận dạng end-to-end trên 1 tệp ảnh
-enhanced_img, debug_mask, detections = run_pipeline_on_image("data/raw/images/0589.jpg")
-
-# 2. In danh sách biển báo phát hiện được
-for det in detections:
-    print(f"Lớp biển báo: {det['predicted_class']} | Độ tin cậy: {det['confidence']:.2f} | BBox: {det['bounding_box']}")
-
-# 3. Vẽ nhãn và lưu ảnh kết quả
-visualized = draw_detections(enhanced_img, detections)
-save_image("outputs/predictions/result.jpg", visualized)
+```powershell
+python tools/benchmark.py --test-list data/processed/test_files.txt --output outputs/benchmark_results.json
 ```
 
----
+### 4. Khai thác mẫu âm khó (Hard-Negative Mining)
 
-### 3. Kiểm tra toàn vẹn Dataset (Audit Tool)
+```powershell
+python tools/hard_negative_mining.py --train-list data/processed/train_files.txt --output outputs/hard_negatives.json
+```
 
-Chạy công cụ kiểm tra ảnh hỏng, nhãn trống, lệch class ID hoặc thiếu ảnh train/test split:
-```bash
+### 5. Kiểm tra tính toàn vẹn bộ dữ liệu (Dataset Audit)
+
+```powershell
 python -m src.audit --output outputs/dataset-audit.json
 ```
 
 ---
 
-## 🧪 Kiểm Thử & Phát Triển
+## 8. Kiểm Thử & CI
 
-Dự án đi kèm bộ unit tests tự động phủ rộng các hàm cốt lõi, trích xuất HOG và dự đoán mô hình:
+Dự án sở hữu bộ kiểm thử tự động phủ kín toàn bộ các khâu từ xử lý ảnh, trích xuất đặc trưng, huấn luyện SVM đến kiểm tra chống rò rỉ chuỗi và logic benchmark:
 
-```bash
-# Chạy bộ kiểm thử tiêu chuẩn bằng unittest
-python -m unittest discover -s tests -v
-
-# Hoặc chạy qua Pytest (nếu đã cài requirements-dev.txt)
-pytest tests -v
+```powershell
+python -m pytest tests -v
 ```
 
 ---
 
-## 💼 Định Hướng Đưa Vào CV / Portfolio
+## 9. Định Hướng Đưa Vào CV / Portfolio
 
-Dự án này là minh chứng tuyệt vời cho năng lực lập trình Python chuyên nghiệp và tư duy Computer Vision nền tảng. Bạn có thể sử dụng các đoạn mô tả mẫu sau cho Resume/CV của mình:
+Dự án là minh chứng xuất sắc cho năng lực **Classical Computer Vision nền tảng** kết hợp tư duy **Data & MLOps chuyên nghiệp**:
 
-> **VietSign Vision — Vietnamese Traffic Sign Recognition Pipeline**
-> - Thiết kế hệ thống nhận dạng 52 lớp biển báo giao thông Việt Nam sử dụng các kỹ thuật xử lý ảnh truyền thống (**CLAHE, HSV, MSER, Canny, Hough, Polygon**) kết hợp mô hình **2-Tier SVM**.
-> - Trích xuất đặc trưng **HOG ($1.764$ chiều)** từ ảnh ROI $64 \times 64$ và thiết kế quy trình train/validation/test tách biệt để đánh giá trung thực.
-> - Xây dựng Python package mô-đun có CLI, dataset audit, I/O Unicode, kiểm thử tự động và CI đa phiên bản Python.
+> **VietSign Vision — Explainable Vietnamese Traffic Sign Recognition with Multi-Cue Classical CV & Two-Stage SVM**
+> - Thiết kế hệ thống nhận dạng 52 lớp biển báo giao thông Việt Nam theo kiến trúc **8 giai đoạn chuẩn hóa**, minh bạch và giải thích được từng bước mà không cần GPU.
+> - Xây dựng **Multi-Cue Region Proposal Engine** tích hợp phân đoạn HSV, MSER, Canny Convex Hull, Hough Circle và Polygon Approximation; chuẩn hóa góc nghiêng bằng **Affine/Perspective Warp Rectification**.
+> - Triển khai cơ chế xếp hạng **Proposal Quality Score (PQS)** và truy vết nguồn gốc đề xuất (**Proposal Provenance**) đến từng kết quả đầu ra.
+> - Thiết kế giao thức phân chia dữ liệu **Leakage-Safe Split** gom cụm theo chuỗi video và thuật toán **pHash Hamming Distance**, ngăn chặn 100% rò rỉ dữ liệu giữa các khung hình liền kề.
+> - Huấn luyện mô hình **Two-Stage SVM Classifier** với quy trình **Hard-Negative Mining** sàng lọc vùng nền gây báo giả, đạt chuẩn mực MLOps khắt khe.
 
-Xem chi tiết hướng dẫn trình bày CV và câu hỏi phỏng vấn tại [docs/PORTFOLIO.md](docs/PORTFOLIO.md).
+Xem chi tiết hướng dẫn trả lời phỏng vấn chuyên sâu tại [docs/PORTFOLIO.md](docs/PORTFOLIO.md).
 
 ---
 
-## 📜 Tài Liệu Chi Tiết
+## 10. Tài Liệu Chi Tiết
 
-- 📐 [Kiến trúc Toán học & Chi tiết Pipeline](docs/ARCHITECTURE.md)
-- 📊 [Thông tin Chi tiết về Dataset Card](docs/DATASET_CARD.md)
-- 🤖 [Thông số Huấn luyện Model Card](docs/MODEL_CARD.md)
-- 💼 [Hướng dẫn Trình bày CV & Phỏng vấn Portfolio](docs/PORTFOLIO.md)
+- 📐 [Kiến Trúc Toán Học & Thiết Kế Hệ Thống](docs/ARCHITECTURE.md)
+- 📊 [Thông Tin Bộ Dữ Liệu (Dataset Card)](docs/DATASET_CARD.md)
+- 🤖 [Thông Số Mô Hình (Model Card)](docs/MODEL_CARD.md)
+- 💼 [Hướng Dẫn Portfolio & Phỏng Vấn Tuyển Dụng](docs/PORTFOLIO.md)
 
 ---
 

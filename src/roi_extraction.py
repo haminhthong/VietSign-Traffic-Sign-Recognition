@@ -213,58 +213,142 @@ def draw_rois(
     return result
 
 
+def compute_proposal_quality_score(item: Dict[str, Any]) -> float:
+    """Tính Proposal Quality Score (PQS) dựa trên bằng chứng đa nguồn và tính hợp lý hình học.
+
+    Điểm số cao hơn phản ánh ứng viên được đồng thời xác nhận bởi nhiều kỹ thuật độc lập
+    (màu sắc HSV, tính ổn định MSER, biên Canny Hull, và hình dạng Hough Circle / PolyDP).
+
+    Args:
+        item (Dict[str, Any]): Từ điển thông tin vùng ứng viên.
+
+    Returns:
+        float: Điểm chất lượng đề xuất PQS >= 0.01.
+    """
+    sources = set(item.get("proposal_sources", []))
+    if not sources and item.get("source"):
+        sources.add(str(item["source"]).upper())
+
+    # Trọng số bằng chứng từng nguồn độc lập
+    weights = {
+        "HSV": 0.35,
+        "HSV_COLOR": 0.35,
+        "MSER": 0.25,
+        "CANNY_HULL": 0.20,
+        "EDGE_HULL": 0.20,
+        "CONTOUR": 0.20,
+        "HOUGH_CIRCLE": 0.40,
+        "CIRCLE": 0.40,
+        "POLYGON_TRIANGLE": 0.35,
+        "TRIANGLE": 0.35,
+        "POLYGON_RECTANGLE": 0.30,
+        "RECTANGLE": 0.30,
+    }
+
+    evidence_score = sum(weights.get(s, 0.15) for s in sources)
+    # Thưởng khi có nhiều nguồn độc lập cùng xác nhận (Multi-cue synergy)
+    if len(sources) >= 3:
+        evidence_score += 0.25
+    elif len(sources) == 2:
+        evidence_score += 0.12
+
+    # Đánh giá tỷ lệ khung hình (biển báo giao thông chuẩn thường gần 1.0 hoặc dạng chữ nhật chuẩn)
+    bx = item.get("bounding_box", [0, 0, 1, 1])
+    w, h = max(int(bx[2]), 1), max(int(bx[3]), 1)
+    ar = w / float(h)
+    ar_penalty = min(abs(1.0 - ar) * 0.1, 0.25)
+
+    # Đóng góp từ confidence nội bộ nếu có
+    conf = float(item.get("confidence", 0.0))
+    final_score = evidence_score + 0.2 * conf - ar_penalty
+    return max(round(float(final_score), 4), 0.01)
+
+
 def merge_candidates(
     contour_items: List[Dict[str, Any]],
     circle_items: List[Dict[str, Any]],
-    iou_dedup_threshold: Optional[float] = None,
+    iou_dedup_threshold: Optional[float] = 0.45,
 ) -> List[Dict[str, Any]]:
-    """Gộp các ứng viên từ phân đoạn màu/MSER/Polygon và Hough Circle.
+    """Gộp các ứng viên từ phân đoạn màu/MSER/Polygon và Hough Circle với cơ chế cộng dồn bằng chứng.
+
+    Khi hai ứng viên từ các nguồn khác nhau trùng lặp cao (IoU >= iou_dedup_threshold),
+    thay vì loại bỏ đơn thuần, thuật toán sẽ hợp nhất dấu vết nguồn gốc (proposal_sources)
+    và tính lại điểm Proposal Quality Score (PQS).
 
     Args:
-        contour_items (List[Dict[str, Any]]): Danh sách từ phân đoạn contour.
+        contour_items (List[Dict[str, Any]]): Danh sách từ phân đoạn contour/MSER/Polygon.
         circle_items (List[Dict[str, Any]]): Danh sách từ Hough Circle.
-        iou_dedup_threshold (Optional[float]): Ngưỡng khử trùng lặp IoU.
+        iou_dedup_threshold (Optional[float]): Ngưỡng khử trùng lặp IoU. Mặc định 0.45.
 
     Returns:
-        List[Dict[str, Any]]: Danh sách ứng viên đã gộp.
+        List[Dict[str, Any]]: Danh sách ứng viên đã gộp và gắn điểm chất lượng PQS.
     """
-    merged = [{**c, "source": c.get("source", "contour")} for c in contour_items]
+    merged: List[Dict[str, Any]] = []
+    for c in contour_items:
+        it = dict(c)
+        it.setdefault("source", "contour")
+        if "proposal_sources" not in it:
+            it["proposal_sources"] = [str(it["source"]).upper()]
+        it["proposal_score"] = compute_proposal_quality_score(it)
+        merged.append(it)
 
     if iou_dedup_threshold is None:
-        merged.extend({**c, "source": c.get("source", "circle")} for c in circle_items)
+        for circ in circle_items:
+            it = dict(circ)
+            it.setdefault("source", "circle")
+            if "proposal_sources" not in it:
+                it["proposal_sources"] = ["HOUGH_CIRCLE"]
+            it["proposal_score"] = compute_proposal_quality_score(it)
+            merged.append(it)
         return merged
 
-    contour_boxes = [
-        (
-            c["bounding_box"][0],
-            c["bounding_box"][1],
-            c["bounding_box"][0] + c["bounding_box"][2],
-            c["bounding_box"][1] + c["bounding_box"][3],
-        )
-        for c in contour_items
-    ]
-    for circle in circle_items:
-        bx = circle["bounding_box"]
+    for circ in circle_items:
+        c_it = dict(circ)
+        c_it.setdefault("source", "circle")
+        if "proposal_sources" not in c_it:
+            c_it["proposal_sources"] = ["HOUGH_CIRCLE"]
+
+        bx = c_it["bounding_box"]
         cbox = (bx[0], bx[1], bx[0] + bx[2], bx[1] + bx[3])
-        is_duplicate = any(compute_iou(cbox, cb) >= iou_dedup_threshold for cb in contour_boxes)
-        if not is_duplicate:
-            merged.append({**circle, "source": circle.get("source", "circle")})
+
+        best_iou = 0.0
+        best_match_idx = -1
+        for idx, base_item in enumerate(merged):
+            bb = base_item["bounding_box"]
+            bbox = (bb[0], bb[1], bb[0] + bb[2], bb[1] + bb[3])
+            iou = compute_iou(cbox, bbox)
+            if iou > best_iou:
+                best_iou = iou
+                best_match_idx = idx
+
+        if best_iou >= iou_dedup_threshold and best_match_idx >= 0:
+            # Hợp nhất bằng chứng: Thêm HOUGH_CIRCLE vào nguồn gốc của candidate đã có
+            target = merged[best_match_idx]
+            combined_sources = list(dict.fromkeys(target.get("proposal_sources", []) + c_it["proposal_sources"]))
+            target["proposal_sources"] = combined_sources
+            if "vertices" in c_it and "vertices" not in target:
+                target["vertices"] = c_it["vertices"]
+            target["proposal_score"] = compute_proposal_quality_score(target)
+        else:
+            c_it["proposal_score"] = compute_proposal_quality_score(c_it)
+            merged.append(c_it)
 
     return merged
 
 
 def apply_nms(
-    items: List[Dict[str, Any]], iou_threshold: float = 0.5, prioritize_source: bool = True
+    items: List[Dict[str, Any]], iou_threshold: float = 0.5, prioritize_source: bool = False
 ) -> List[Dict[str, Any]]:
     """Áp dụng thuật toán NMS (Non-Maximum Suppression) để lọc các ứng viên đè lên nhau.
 
-    Sắp xếp các ứng viên theo thứ tự ưu tiên điểm số (Confidence / Source Priority)
-    và giữ lại ứng viên tốt nhất khi chỉ số IoU với các ứng viên khác > iou_threshold.
+    Sắp xếp các ứng viên theo thứ tự ưu tiên điểm số:
+    - Mặc định: Proposal Quality Score (hoặc Model Score nếu có) kết hợp diện tích.
+    - prioritize_source=True: Ưu tiên nguồn contour trước circle (legacy compatibility).
 
     Args:
         items (List[Dict[str, Any]]): Danh sách ứng viên.
         iou_threshold (float): Ngưỡng IoU coi là chồng lấp. Mặc định 0.5.
-        prioritize_source (bool): Ưu tiên nguồn contour trước circle hay không. Mặc định True.
+        prioritize_source (bool): Ưu tiên cứng nguồn contour hay dùng Proposal Quality Score. Mặc định False.
 
     Returns:
         List[Dict[str, Any]]: Danh sách các ứng viên duy nhất đã qua lọc.
@@ -277,10 +361,19 @@ def apply_nms(
         _, _, w, h = it["bounding_box"]
         area = w * h
         aspect_penalty = abs(1.0 - (w / float(h) if h > 0 else 1.0))
+
         if prioritize_source:
             source_priority = 1 if it.get("source") == "contour" else 0
             return (source_priority, conf, area)
-        return (round(conf - 0.15 * aspect_penalty, 4), area)
+
+        # Sử dụng Proposal Quality Score (PQS)
+        pqs = it.get("proposal_score")
+        if pqs is None:
+            pqs = compute_proposal_quality_score(it)
+
+        # Nếu sau bước phân loại SVM, model_score/confidence sẽ hỗ trợ xếp hạng
+        model_score = float(it.get("model_score", conf))
+        return (round(float(pqs) + 0.6 * model_score - 0.1 * aspect_penalty, 4), area)
 
     scored = []
     for it in items:

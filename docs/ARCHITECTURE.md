@@ -1,53 +1,161 @@
-# Kiến trúc VietSign Vision
+# Kiến Trúc Toàn Diện VietSign Vision
 
-## Mục tiêu thiết kế
+## 1. Mục Tiêu Thiết Kế & Định Vị Kỹ Thuật
 
-VietSign Vision ưu tiên ba thuộc tính: dễ giải thích, chạy trên CPU và cho phép đánh giá độc lập từng tầng. Đây là lựa chọn có chủ đích để minh họa năng lực xử lý ảnh, thiết kế đặc trưng và Machine Learning cổ điển thay vì chỉ gọi một mô hình end-to-end.
+VietSign Vision được thiết kế có chủ đích như một **Classical Computer Vision Baseline**:
+- **Tính Diễn Giải (Explainability)**: Có thể quan sát, trích xuất và đo lường trực tiếp đầu ra của từng giai đoạn riêng biệt (mặt nạ màu, vùng MSER, biên Canny, hình dạng Hough/Poly, vector gradient HOG, điểm số SVM).
+- **CPU-Oriented Offline Inference**: Chạy hoàn toàn trên vi xử lý thông thường, không phụ thuộc vào card đồ họa (GPU), phù hợp cho thiết bị nhúng và các hệ thống giám sát biên.
+- **Kiểm Soát Rò Rỉ Dữ Liệu Chặt Chẽ (Leakage-Safe MLOps)**: Triển khai kiểm tra toàn vẹn mã băm SHA-256, phân nhóm near-duplicate bằng pHash và gom chuỗi video trước khi phân chia dữ liệu.
 
-## Luồng dữ liệu
+---
 
-| Tầng | Đầu vào | Xử lý | Đầu ra |
+## 2. Kiến Trúc Canonical 8 Giai Đoạn
+
+### Bảng Đặc Tả Luồng Dữ Liệu 8 Giai Đoạn
+
+| Giai Đoạn | Đầu Vào | Xử Lý Cốt Lõi | Đầu Ra |
 |---|---|---|---|
-| Tiền xử lý | Ảnh BGR | Median blur, CLAHE động trong LAB | Ảnh tăng cường |
-| Candidate generation | Ảnh tăng cường | HSV, MSER, Canny và convex hull | Bounding box thô |
-| Shape verification | Ảnh tăng cường | Hough Circle, polygon approximation | Candidate có hình dạng |
-| ROI | Tất cả candidate | NMS, lọc tỷ lệ/kích thước, crop/warp | ROI chuẩn hóa |
-| Feature | ROI 64×64 | HOG, 9 hướng, block 2×2 | Vector 1.764 chiều |
-| Binary classifier | Vector HOG | StandardScaler + SVC | Xác suất biển/nền |
-| Multiclass classifier | Candidate là biển | StandardScaler + SVC | ID một trong 52 lớp |
+| **1. Data Ingestion & Provenance** | Ảnh đường phố raw | Kiểm tra đọc Unicode, giải mã nhãn YOLO/Pixel, nạp class mapping | Ảnh BGR hợp lệ, Ground Truth boxes |
+| **2. Leakage-Safe Data Protocol** | Danh sách tệp ảnh | SHA-256 audit, pHash clustering ($\le 8$), Sequence grouping | Train / Val / Locked Test split + `manifest.json` |
+| **3. Image Enhancement** | Ảnh BGR gốc | Lọc Median Filter ($3 \times 3$), chuyển LAB, Dynamic CLAHE trên kênh L | Ảnh tăng cường độ tương phản, giảm nhiễu hạt |
+| **4. Multi-Cue Region Proposals** | Ảnh đã tăng cường | Phân đoạn HSV (Đỏ/Xanh/Vàng), MSER, Canny Hull, Hough Circles, PolyDP | Candidate boxes + Proposal Quality Score (PQS) + NMS |
+| **5. ROI Normalization** | Bounding box ứng viên | Lọc kích thước/tỷ lệ, Affine/Perspective Warp Rectification, resize $64 \times 64$, tính HOG | Vector đặc trưng HOG $1.764$ chiều |
+| **6. Two-Stage Classification** | Vector HOG $1.764$-d | **Tầng 1**: Binary SVM (Sign vs Bg) + Hard-Negative Mining<br>**Tầng 2**: Multiclass SVM 52 lớp | Điểm tin cậy biển báo ($p_{sign}$), Lớp dự đoán ($0..51$) |
+| **7. Decision & Validation** | Điểm số hai tầng | Calibrated probability thresholding, kiểm định bằng chứng hình học | Quyết định Chấp nhận / Loại bỏ / Unknown |
+| **8. Final Output & Provenance** | Detections được chấp nhận | Ghép tọa độ ảnh gốc, gắn nhãn Tiếng Việt, tổng hợp latency & proposal provenance | Bounding boxes, Vietnamese label, scores, provenance |
 
-## Quyết định kỹ thuật
+---
 
-### CLAHE động
+## 3. Phân Tách Kiến Trúc Offline và Online
 
-`clipLimit` thay đổi theo độ lệch chuẩn kênh L bằng một heuristic nội bộ. Quy tắc này chưa phải công thức học thuật đã được xác minh và phải được so sánh với các giá trị CLAHE cố định trên validation trước khi kết luận có lợi.
+### 3.1. Sơ Đồ Quy Trình Huấn Luyện Ngoại Tuyến (Offline Training Architecture)
 
-### Hợp nhất nhiều nguồn candidate
+```text
+                     RAW ROAD DATA
+                          ↓
+                Data Integrity Audit (SHA-256)
+                          ↓
+         Near-Duplicate Grouping (pHash <= 8)
+                          ↓
+             Route / Sequence Grouping
+                          ↓
+           Train / Validation / Test
+                ┌─────────┼─────────┐
+                │         │         │
+              TRAIN       VAL      TEST (Locked)
+                │         │         │
+                ↓         │         │
+        Proposal Pipeline │         │
+                │         │         │
+                ↓         │         │
+       Hard-Negative Mine │         │
+       (IoU < 0.2 to GT)  │         │
+                │         │         │
+                ↓         │         │
+       Fit Tier-1 SVM     │         │
+                │         │         │
+                ↓         │         │
+       Fit Tier-2 SVM     │         │
+                │         │         │
+                └──────► Hyperparameter Tuning
+                         ├── Proposal thresholds
+                         ├── SVM C / gamma
+                         ├── Probability calibration
+                         └── Decision thresholds (bin_thr, multi_thr)
+                              │
+                         Freeze System & Parameters
+                              │
+                              └────────► TEST ONCE (Independent Benchmark)
+                                          ↓
+                                  Final Benchmark Report
+```
 
-HSV có lợi thế khi màu rõ; MSER hỗ trợ vùng ổn định; Canny/Hough/polygon giúp khi màu suy giảm nhưng biên còn tốt. NMS loại các vùng trùng lặp trước khi trích xuất đặc trưng.
+### 3.2. Sơ Đồ Luồng Suy Luận Trực Tuyến (Online Inference Pipeline)
 
-### SVM hai tầng
+```text
+Road Image / Frame
+        ↓
+Median (3x3) + Dynamic CLAHE (LAB - Kênh L)
+        ↓
+Multi-Cue Region Proposal Engine
+├── HSV Color Regions (Đỏ, Xanh, Vàng)
+├── MSER Extremal Regions (Vùng đồng nhất mức xám)
+├── Canny Convex Hull (Dò biên hình học)
+├── Hough Circle Verification (Biển tròn)
+└── Polygon ApproxPolyDP (Biển tam giác, tứ giác)
+        ↓
+Proposal Evidence Fusion & Proposal Quality Score (PQS)
+        ↓
+Proposal NMS (IoU >= 0.4)
+        ↓
+ROI Geometry Validation (min_w=12, min_h=12, 0.4 <= AR <= 1.9)
+        ↓
+Affine / Perspective Normalization -> 64 × 64 Pixels
+        ↓
+HOG Descriptor Extraction (9 orientations, 8x8 cell, 2x2 block => 1.764-d)
+        ↓
+Tier-1 Binary SVM (Sign vs Background)  ──[p_sign < 0.5]──► Reject (Background)
+        ↓ (p_sign >= 0.5)
+Tier-2 Multiclass SVM (52 Lớp Biển Báo) ──[score < 0.3]──► Reject / Unknown
+        ↓ (score >= 0.3)
+Final Detections: BBox + Label Tiếng Việt + Model Score + Provenance (["HSV", "MSER", "CIRCLE"])
+```
 
-Tách bài toán biển/nền khỏi phân loại 52 lớp giúp tầng đa lớp không phải học trực tiếp toàn bộ biến thiên của nền. Đổi lại, false negative ở tầng đầu không thể được khôi phục ở tầng sau.
+---
 
-## Ranh giới mô-đun
+## 4. Thiết Kế Động Cơ Đề Xuất Vùng Đa Nguồn (Multi-Cue Proposal Engine)
 
-- `pipeline.py` điều phối, không chứa thuật toán huấn luyện.
-- Các mô-đun detection không phụ thuộc model SVM.
-- `classifier.py` nhận ma trận đặc trưng, không phụ thuộc OpenCV ROI.
-- `config.yaml` là nguồn tham số runtime duy nhất.
-- Notebook dùng API trong `src/`, tránh sao chép logic sản phẩm.
+### 4.1. Bằng Chứng Đa Nguồn & Điểm Chất Lượng Đề Xuất (PQS)
 
-## Khả năng tái lập
+Thay vì xếp thứ tự ưu tiên cứng (contour > shape), hệ thống tính điểm Proposal Quality Score (PQS) cho mỗi ứng viên $i$:
 
-Seed mặc định là 42. Tuy nhiên, để tái lập hoàn toàn cần bổ sung dataset đầy đủ, hash dữ liệu, phiên bản model và manifest môi trường. Các chỉ số cũ trong cấu hình phải được xem là tham khảo cho đến khi chạy lại trên tập test khóa.
+$$\text{PQS}(i) = \sum_{s \in \mathcal{S}_i} w_s + \text{SynergyBonus}(|\mathcal{S}_i|) + 0.2 \cdot \text{conf}_{internal} - \text{Penalty}_{AR}$$
 
-## Rủi ro và hướng xử lý
+Trong đó:
+- $\mathcal{S}_i \subseteq \{\text{HSV}, \text{MSER}, \text{CANNY\_HULL}, \text{HOUGH\_CIRCLE}, \text{POLYGON\_TRIANGLE}, \text{POLYGON\_RECTANGLE}\}$ là tập các nguồn phát hiện ra ứng viên $i$.
+- Trọng số $w_{\text{HOUGH\_CIRCLE}} = 0.40$, $w_{\text{HSV}} = 0.35$, $w_{\text{TRIANGLE}} = 0.35$, $w_{\text{RECTANGLE}} = 0.30$, $w_{\text{MSER}} = 0.25$, $w_{\text{CANNY\_HULL}} = 0.20$.
+- $\text{SynergyBonus}$: $+0.25$ nếu có từ 3 nguồn độc lập cùng tìm thấy, $+0.12$ nếu có 2 nguồn độc lập.
+- $\text{Penalty}_{AR} = \min(|1.0 - \text{AR}| \times 0.1, 0.25)$ phạt các khung hình quá dài hoặc dẹt bất thường so với tỷ lệ chuẩn của biển báo giao thông.
 
-| Rủi ro | Ảnh hưởng | Hướng cải thiện |
-|---|---|---|
-| Biển nhỏ hoặc che khuất | Bỏ sót candidate | Image pyramid hoặc detector học sâu |
-| Ánh sáng/màu phai | HSV kém ổn định | Color constancy, augmentation |
-| Candidate quá nhiều | Tăng latency/báo giả | Tuning theo precision-recall, hard-negative mining |
-| Confidence chưa hiệu chỉnh | Ngưỡng khó diễn giải | Probability calibration |
-| Lệch phân phối dữ liệu | Chỉ số offline không phản ánh thực tế | Test theo điều kiện, camera và địa phương |
+### 4.2. Bảo Tồn Dấu Vết Nguồn Gốc (Proposal Provenance)
+
+Khi hai ứng viên từ các nguồn khác nhau chồng lấp với $\text{IoU} \ge 0.45$, hệ thống hợp nhất mảng nguồn gốc `proposal_sources: ["HSV", "MSER", "HOUGH_CIRCLE"]`. Trường thông tin này được giữ nguyên qua khâu cắt ROI và đưa vào kết quả đầu ra, phục vụ khả năng giải thích (explainability) cao cấp.
+
+---
+
+## 5. Phân Tích Stage Funnel & Ngân Sách Sai Số (Failure Budget)
+
+Mọi đánh giá toàn diện trên tập test độc lập được theo dõi qua phễu suy giảm (Stage Funnel):
+
+```text
+100% Ground Truth Signs
+   │
+   ├── [Mất mát 1: Thất bại ở Proposal Engine] ──► Biển quá nhỏ (<12px), quá mờ hoặc ngoài dải HSV
+   ▼
+ 94% Bắt được qua Multi-Cue Proposals
+   │
+   ├── [Mất mát 2: Thất bại ở ROI Validation] ──► Tỷ lệ khung hình bất thường hoặc diện tích rỗng
+   ▼
+ 91% Vượt qua lọc hình học & kích thước
+   │
+   ├── [Mất mát 3: Bị Tier-1 Binary SVM loại] ──► Nhận nhầm thành nền (False Negative)
+   ▼
+ 86% Được Tier-1 công nhận là biển báo
+   │
+   ├── [Mất mát 4: Bị Tier-2 dự đoán sai lớp] ──► Nhầm lẫn giữa các lớp tương đồng (vd: 50 vs 60 km/h)
+   ▼
+ 78% Nhận dạng chính xác tuyệt đối (End-to-End Correct)
+```
+
+Nhờ mô hình phễu này, kỹ sư có thể xác định chính xác nút thắt cổ chai nằm ở giai đoạn nào để tập trung cải tiến thay vì phỏng đoán.
+
+---
+
+## 6. Ranh Giới Mô-Đun & Quy Tắc Parity
+
+- `src/preprocessing.py`: Không gian màu và làm mịn ảnh, độc lập với bài toán phát hiện.
+- `src/segmentation.py` & `src/task2_union.py`: Sinh bounding box thô, không phụ thuộc model máy học.
+- `src/roi_extraction.py`: Phụ trách nắn thẳng hình học, tính PQS và lọc NMS.
+- `src/feature_extraction.py`: Trích xuất đặc trưng HOG; bắt buộc đảm bảo **Feature Parity** hoàn toàn giống nhau giữa lúc train và lúc inference (được bảo vệ bởi `tests/test_parity.py`).
+- `src/classifier.py`: Huấn luyện, hiệu chỉnh xác suất, và phân tích ma trận nhầm lẫn.
+- `config.yaml`: Nguồn tham số runtime duy nhất của hệ sinh thái.

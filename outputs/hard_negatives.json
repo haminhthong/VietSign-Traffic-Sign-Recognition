@@ -1,0 +1,568 @@
+{
+  "status": "success",
+  "train_images_scanned": 2,
+  "total_background_proposals_mined": 30,
+  "hard_negatives_identified": 0,
+  "iou_negative_threshold": 0.2,
+  "hard_confidence_threshold": 0.3,
+  "sample_mined_candidates": [
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        32,
+        421,
+        93,
+        92
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE",
+        "POLYGON_TRIANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        10,
+        336,
+        86,
+        95
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        284,
+        252,
+        27,
+        31
+      ],
+      "max_iou_to_gt": 0.0066,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "POLYGON_TRIANGLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        26,
+        437,
+        36,
+        36
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HOUGH_CIRCLE",
+        "POLYGON_TRIANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        565,
+        105,
+        64,
+        64
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HOUGH_CIRCLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        1,
+        444,
+        93,
+        95
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        540,
+        264,
+        87,
+        98
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        563,
+        296,
+        76,
+        88
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        283,
+        318,
+        60,
+        70
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        423,
+        459,
+        84,
+        81
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HOUGH_CIRCLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        4,
+        139,
+        224,
+        149
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        1,
+        107,
+        164,
+        107
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        294,
+        185,
+        56,
+        51
+      ],
+      "max_iou_to_gt": 0.1323,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        48,
+        472,
+        26,
+        24
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "0902.jpg",
+      "bounding_box": [
+        902,
+        7,
+        26,
+        32
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        1266,
+        854,
+        121,
+        78
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE",
+        "POLYGON_TRIANGLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        651,
+        815,
+        54,
+        62
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE",
+        "POLYGON_TRIANGLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        683,
+        715,
+        87,
+        103
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE",
+        "POLYGON_TRIANGLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        1220,
+        677,
+        116,
+        152
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        1035,
+        821,
+        69,
+        111
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "HOUGH_CIRCLE",
+        "POLYGON_TRIANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        1301,
+        606,
+        92,
+        91
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        974,
+        731,
+        193,
+        202
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        193,
+        757,
+        18,
+        26
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "POLYGON_TRIANGLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        1402,
+        737,
+        80,
+        87
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        48,
+        497,
+        118,
+        106
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        1139,
+        921,
+        73,
+        87
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        1425,
+        762,
+        106,
+        87
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        879,
+        657,
+        102,
+        78
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "HSV",
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        1093,
+        694,
+        111,
+        125
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    },
+    {
+      "image": "2857.jpg",
+      "bounding_box": [
+        666,
+        601,
+        71,
+        83
+      ],
+      "max_iou_to_gt": 0.0,
+      "model_sign_proba": 0.0,
+      "is_hard_negative": false,
+      "proposal_sources": [
+        "MSER",
+        "CANNY_HULL",
+        "HOUGH_CIRCLE",
+        "POLYGON_RECTANGLE"
+      ],
+      "feature_len": 1764
+    }
+  ],
+  "recommendation": "Bổ sung các mẫu âm khó này vào tập huấn luyện Tier-1 SVM (nhãn 0) để triệt tiêu hoàn toàn báo giả trên các cấu trúc hình học phức tạp."
+}

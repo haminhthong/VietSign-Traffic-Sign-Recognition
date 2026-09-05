@@ -25,6 +25,7 @@ from src.preprocessing import preprocess_task1
 from src.roi_extraction import apply_nms, extract_rois, merge_candidates
 from src.segmentation import segment_task2
 from src.task2_union import build_union_boxes
+from src.utils import compute_iou
 
 
 def _resolve_project_path(path_value: Union[str, Path], project_root: Path) -> Path:
@@ -175,9 +176,30 @@ def process_image_to_rois(
         mser_ar_range=params["task2_union"]["mser_ar_range"],
         mser_min_extent=params["task2_union"]["mser_min_extent"],
     )
-    contour_items = [
-        {"bounding_box": [x, y, w, h], "source": "contour"} for (x, y, w, h) in union_boxes
-    ]
+    contour_items: List[Dict[str, Any]] = []
+    hsv_list = union_components.get("hsv", [])
+    mser_list = union_components.get("mser", [])
+    edge_list = union_components.get("edge_hull", [])
+
+    for (x, y, w, h) in union_boxes:
+        box_xyxy = (x, y, x + w, y + h)
+        sources: List[str] = []
+        if any(compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in hsv_list):
+            sources.append("HSV")
+        if any(compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in mser_list):
+            sources.append("MSER")
+        if any(compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in edge_list):
+            sources.append("CANNY_HULL")
+        if not sources:
+            sources.append("CONTOUR")
+
+        contour_items.append(
+            {
+                "bounding_box": [x, y, w, h],
+                "source": sources[0].lower(),
+                "proposal_sources": sources,
+            }
+        )
 
     debug_set_number = params["task2"]["debug_mask_set_number"]
     include_achromatic = params["task2"].get("include_achromatic", False)
@@ -199,19 +221,27 @@ def process_image_to_rois(
 
     gray_hough = preprocess_for_hough(enhanced)
     circle_items = detect_circles(gray_hough, image_bgr=enhanced, **params["task3_shape"]["circle"])
+    for c in circle_items:
+        c["proposal_sources"] = ["HOUGH_CIRCLE"]
 
     gray_poly = preprocess_for_polygon(enhanced)
     triangle_items = detect_polygons(
         gray_poly, image_bgr=enhanced, target_sides=3, **params["task3_shape"]["triangle"]
     )
+    for t in triangle_items:
+        t["proposal_sources"] = ["POLYGON_TRIANGLE"]
+
     rectangle_items = detect_polygons(
         gray_poly, image_bgr=enhanced, target_sides=4, **params["task3_shape"]["rectangle"]
     )
+    for r in rectangle_items:
+        r["proposal_sources"] = ["POLYGON_RECTANGLE"]
+
     shape_items = circle_items + triangle_items + rectangle_items
 
     nms_thr = params["task4"].get("nms_iou_threshold", 0.4)
-    merged_items = merge_candidates(contour_items, shape_items)
-    merged_items = apply_nms(merged_items, iou_threshold=nms_thr)
+    merged_items = merge_candidates(contour_items, shape_items, iou_dedup_threshold=0.45)
+    merged_items = apply_nms(merged_items, iou_threshold=nms_thr, prioritize_source=False)
 
     rois, rejected = extract_rois(
         enhanced,
@@ -300,12 +330,17 @@ def classify_rois(
     for idx, pred_class, conf in zip(sign_idx, pred_multi, conf_multi):
         if conf < multi_thr:
             continue
+        roi_item = rois[idx]
         results.append(
             {
-                "bounding_box": rois[idx]["bounding_box"],
+                "bounding_box": roi_item["bounding_box"],
                 "predicted_class": int(pred_class),
+                "model_score": float(conf),
                 "confidence": float(conf),
+                "bin_model_score": float(p_sign[idx]),
                 "bin_confidence": float(p_sign[idx]),
+                "proposal_sources": roi_item.get("proposal_sources", []),
+                "proposal_score": roi_item.get("proposal_score"),
             }
         )
 
@@ -367,7 +402,15 @@ def run_pipeline_on_image(
     detections = classify_rois(rois, params, model_bin, scaler_bin, model_multi, scaler_multi)
 
     if return_debug:
-        debug_info = {"union_components": union_components, "rejected_rois": rejected}
+        debug_info = {
+            "union_components": union_components,
+            "rejected_rois": rejected,
+            "stage_funnel": {
+                "rois_extracted": len(rois),
+                "rois_rejected": len(rejected),
+                "final_detections": len(detections),
+            },
+        }
         return enhanced, mask_debug, detections, debug_info
 
     return enhanced, mask_debug, detections

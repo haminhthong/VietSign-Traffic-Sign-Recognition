@@ -1,0 +1,51 @@
+{
+  "status": "candidate_benchmark_completed_models_pending",
+  "models_loaded": false,
+  "test_images_evaluated": 2,
+  "gt_signs_evaluated": 8,
+  "candidate_proposal_metrics": {
+    "proposal_recall_at_iou50": 1.0,
+    "proposal_precision": 0.0113,
+    "proposals_per_image": 354.0,
+    "fp_proposals_per_image": 350.0,
+    "tp_proposals": 8,
+    "fp_proposals": 700,
+    "fn_proposals": 0
+  },
+  "size_slices": {
+    "small (<32x32)": {
+      "gt_count": 0,
+      "matched_proposals": 0,
+      "proposal_recall_at_iou50": 0.0
+    },
+    "medium (32-96)": {
+      "gt_count": 8,
+      "matched_proposals": 8,
+      "proposal_recall_at_iou50": 1.0
+    },
+    "large (>96x96)": {
+      "gt_count": 0,
+      "matched_proposals": 0,
+      "proposal_recall_at_iou50": 0.0
+    }
+  },
+  "stage_funnel": {
+    "1_gt_signs_total": 8,
+    "2_candidate_proposals_captured": 8,
+    "3_proposal_recall_percent": 100.0,
+    "4_roi_rois_extracted_total": 708
+  },
+  "latency_ms": {
+    "mean": 3099.73,
+    "p50": 3099.73,
+    "p95": 3583.81
+  },
+  "end_to_end_metrics": {
+    "e2e_recall": null,
+    "e2e_precision": null,
+    "e2e_f1": null,
+    "e2e_tp": null,
+    "e2e_fp": null
+  },
+  "disclaimer": "Benchmark được thực thi trên tập dữ liệu khả dụng hiện tại. Để tái lập toàn bộ chỉ số SVM 52 lớp lịch sử, vui lòng huấn luyện lại model với full dataset."
+}

@@ -10,7 +10,13 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import joblib
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    precision_recall_fscore_support,
+)
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -186,6 +192,78 @@ def evaluate_svm(clf: SVC, scaler: StandardScaler, X: np.ndarray, y: np.ndarray)
         "report": classification_report(y, y_pred, zero_division=0),
         "confusion_matrix": confusion_matrix(y, y_pred),
         "y_pred": y_pred,
+    }
+
+
+def analyze_confusion_and_per_class_f1(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    class_names: Optional[List[str]] = None,
+    top_k: int = 10,
+) -> Dict[str, Any]:
+    """Phân tích chuyên sâu ma trận nhầm lẫn và F1 từng lớp cho bài toán 52 lớp biển báo.
+
+    Xác định các lớp có hiệu năng kém nhất (Worst K Classes) và các cặp lớp dễ nhầm lẫn
+    nhất (Top Confusion Pairs, ví dụ: 50km/h vs 60km/h, Cấm dừng vs Cấm đỗ).
+
+    Args:
+        y_true (np.ndarray): Vector nhãn thực tế.
+        y_pred (np.ndarray): Vector nhãn dự đoán.
+        class_names (Optional[List[str]]): Danh sách tên các lớp theo index.
+        top_k (int): Số lượng lớp/cặp nhầm lẫn nổi bật cần trích xuất. Mặc định 10.
+
+    Returns:
+        Dict[str, Any]: Từ điển gồm macro_f1, per_class, worst_classes, top_confusion_pairs.
+    """
+    labels = np.unique(np.concatenate([y_true, y_pred]))
+    prec, rec, f1, supp = precision_recall_fscore_support(
+        y_true, y_pred, labels=labels, zero_division=0
+    )
+
+    per_class = []
+    for cls_idx, p, r, f, s in zip(labels, prec, rec, f1, supp):
+        name = class_names[int(cls_idx)] if class_names and int(cls_idx) < len(class_names) else f"Class_{int(cls_idx)}"
+        per_class.append(
+            {
+                "class_id": int(cls_idx),
+                "name": name,
+                "precision": round(float(p), 4),
+                "recall": round(float(r), 4),
+                "f1_score": round(float(f), 4),
+                "support": int(s),
+            }
+        )
+
+    # Tìm worst K classes theo F1
+    worst_classes = sorted(per_class, key=lambda x: (x["f1_score"], -x["support"]))[:top_k]
+
+    # Phân tích top confusion pairs từ ma trận nhầm lẫn (bỏ đường chéo chính true == pred)
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+    confusion_pairs = []
+    for i, true_lbl in enumerate(labels):
+        for j, pred_lbl in enumerate(labels):
+            if i != j and cm[i, j] > 0:
+                true_name = class_names[int(true_lbl)] if class_names and int(true_lbl) < len(class_names) else f"Class_{int(true_lbl)}"
+                pred_name = class_names[int(pred_lbl)] if class_names and int(pred_lbl) < len(class_names) else f"Class_{int(pred_lbl)}"
+                confusion_pairs.append(
+                    {
+                        "true_class_id": int(true_lbl),
+                        "true_class_name": true_name,
+                        "pred_class_id": int(pred_lbl),
+                        "pred_class_name": pred_name,
+                        "count": int(cm[i, j]),
+                    }
+                )
+
+    confusion_pairs.sort(key=lambda x: x["count"], reverse=True)
+    top_confusion_pairs = confusion_pairs[:top_k]
+
+    return {
+        "macro_f1": round(float(f1_score(y_true, y_pred, average="macro", zero_division=0)), 4),
+        "total_samples": int(len(y_true)),
+        "per_class": per_class,
+        "worst_classes": worst_classes,
+        "top_confusion_pairs": top_confusion_pairs,
     }
 
 
