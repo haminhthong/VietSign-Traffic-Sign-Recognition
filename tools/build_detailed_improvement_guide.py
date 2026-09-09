@@ -229,7 +229,7 @@ return best.named_steps["svc"], best.named_steps["scaler"]
         document,
         "3.2 Hạ các claim vượt bằng chứng",
         "Các cụm production-grade, edge-ready, Explainable AI và Type Annotations 100% cần phép đo hoặc định nghĩa. Portfolio tốt ưu tiên trung thực hơn quảng cáo.",
-        "README.md, docs/PORTFOLIO.md, pyproject.toml",
+        "README.md, pyproject.toml",
         [
             "Dùng 'interpretable classical CV baseline' thay cho Explainable AI nếu chưa có XAI method.",
             "Dùng 'CPU-only offline pipeline' thay cho edge-ready đến khi benchmark Raspberry Pi/phần cứng mục tiêu.",
@@ -248,7 +248,7 @@ return best.named_steps["svc"], best.named_steps["scaler"]
         document,
         "4.1 Hoàn thiện Dataset Card và manifest",
         "Repository hiện có 5/3.191 ảnh tham chiếu, không đủ train hoặc xác minh benchmark.",
-        "docs/DATASET_CARD.md, data/raw/, src/audit.py",
+        "data/raw/, src/audit.py",
         [
             "Ghi nguồn, phiên bản, license, quy trình annotation, class mapping và quyền phân phối.",
             "Nếu không thể commit data, tạo script tải hoặc hướng dẫn đặt dữ liệu với checksum.",
@@ -266,7 +266,7 @@ return best.named_steps["svc"], best.named_steps["scaler"]
         document,
         "4.2 Phát hành model có provenance",
         "Full inference không chạy vì thiếu svm_binary.joblib và svm_multiclass.joblib; Joblib cũng không an toàn nếu tải từ nguồn lạ.",
-        "outputs/models/, src/classifier.py, docs/MODEL_CARD.md, README.md",
+        "outputs/models/, src/classifier.py, README.md",
         [
             "Phát hành model qua GitHub Release hoặc kho artifact; không commit file lớn trực tiếp.",
             "Công bố SHA-256, scikit-learn version, Python version, config hash, dataset manifest hash và training commit.",
@@ -364,7 +364,7 @@ return best.named_steps["svc"], best.named_steps["scaler"]
         document,
         "6.2 Benchmark trước khi nói edge-ready hoặc 100 users",
         "Hiện chưa có server, load test hoặc benchmark phần cứng. Không cần xây service nếu không thuộc mục tiêu dự án.",
-        "tools/benchmark.py (mới), docs/BENCHMARK.md (mới)",
+        "tools/benchmark.py, README.md",
         [
             "Warm-up 5 lần, đo ít nhất 30 lần; báo p50/p95 thay vì một lần đo.",
             "Đo riêng candidate generation, HOG, classifier và tổng pipeline.",
