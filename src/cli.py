@@ -84,6 +84,11 @@ def _collect_images(input_path: Path) -> List[Path]:
     raise FileNotFoundError(f"Không tìm thấy tệp hoặc thư mục đầu vào: {input_path}")
 
 
+def _resolve_project_path(path: Path, project_root: Path) -> Path:
+    """Giải quyết đường dẫn CLI tương đối từ gốc dự án thay vì từ thư mục gọi lệnh."""
+    return path if path.is_absolute() else project_root / path
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """Hàm khởi chạy chính của CLI.
 
@@ -107,10 +112,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         raise ValueError(f"Không tìm thấy ảnh hợp lệ (.jpg, .jpeg, .png) tại: {args.input}")
 
     params, project_root, _ = load_pipeline_config(args.project_root)
-    class_file = args.classes or (project_root / "data" / "raw" / "classes_vie.txt")
+    output_dir = _resolve_project_path(args.output, project_root)
+    class_file = (
+        _resolve_project_path(args.classes, project_root)
+        if args.classes
+        else project_root / "data" / "raw" / "classes_vie.txt"
+    )
     class_names = _read_class_names(class_file) if class_file.is_file() else None
 
-    args.output.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
     summary: List[Dict[str, Any]] = []
     model_components = None if args.detect_only else load_pipeline_models(params)
 
@@ -127,7 +137,17 @@ def main(argv: Optional[List[str]] = None) -> int:
                     key: value
                     for key, value in roi.items()
                     if key
-                    in {"bounding_box", "source", "confidence", "vertices", "x", "y", "radius"}
+                    in {
+                        "bounding_box",
+                        "source",
+                        "confidence",
+                        "vertices",
+                        "x",
+                        "y",
+                        "radius",
+                        "proposal_sources",
+                        "proposal_score",
+                    }
                 }
                 for roi in rois
             ]
@@ -144,19 +164,20 @@ def main(argv: Optional[List[str]] = None) -> int:
             # Model đã được nạp một lần trước vòng lặp để tránh I/O lặp theo số ảnh.
             assert model_components is not None
             model_bin, scaler_bin, model_multi, scaler_multi = model_components
-            enhanced, _, detections = run_pipeline_on_image(
+            enhanced, _, detections, debug_info = run_pipeline_on_image(
                 image_path,
                 project_root=project_root,
                 model_bin=model_bin,
                 scaler_bin=scaler_bin,
                 model_multi=model_multi,
                 scaler_multi=scaler_multi,
+                return_debug=True,
             )
-            rejected = []
+            rejected = debug_info["rejected_rois"]
             visualized = draw_detections(enhanced, detections, class_names)
 
         elapsed_ms = round((time.perf_counter() - started_at) * 1000, 2)
-        output_image = args.output / image_path.name
+        output_image = output_dir / image_path.name
 
         if not save_image(output_image, visualized):
             raise OSError(f"Không thể ghi ảnh kết quả tại: {output_image}")
@@ -173,9 +194,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         label = "vùng ứng viên" if args.detect_only else "biển báo"
         print(f" -> {image_path.name}: Tìm thấy {len(detections)} {label} ({elapsed_ms:.2f} ms)")
 
-    result_path = args.output / "predictions.json"
+    result_path = output_dir / "predictions.json"
     result_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\n[Thành công] Đã lưu kết quả dự đoán và JSON tại thư mục: {args.output.resolve()}")
+    print(f"\n[Thành công] Đã lưu kết quả dự đoán và JSON tại thư mục: {output_dir.resolve()}")
     return 0
 
 

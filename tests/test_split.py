@@ -13,13 +13,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import numpy as np
 from PIL import Image
 
 from tools.reproducible_split import (
     cluster_images,
-    compute_phash,
-    compute_sha256,
     export_split_manifest,
     extract_sequence_id,
     group_aware_split,
@@ -121,7 +118,7 @@ class TestReproducibleSplit(unittest.TestCase):
         clusters = cluster_images([f1, f2], label_dir=self.label_dir, phash_thresh=8)
         train_c, val_c, test_c = group_aware_split(clusters, train_ratio=0.5, val_ratio=0.5, seed=42)
 
-        summary = export_split_manifest(self.out_dir, train_c, val_c, test_c, base_dir=self.temp_dir)
+        export_split_manifest(self.out_dir, train_c, val_c, test_c, base_dir=self.temp_dir)
         manifest_file = self.out_dir / "manifest.json"
 
         self.assertTrue(manifest_file.is_file())

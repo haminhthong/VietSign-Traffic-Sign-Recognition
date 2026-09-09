@@ -78,6 +78,25 @@ def load_pipeline_config(
     t6 = cfg.get("task6", {})
     hog_cfg = t5.get("hog_params", {})
 
+    configured_hsv_ranges = None
+    required_hsv_keys = {
+        "red_lower1",
+        "red_upper1",
+        "red_lower2",
+        "red_upper2",
+        "yellow_lower",
+        "yellow_upper",
+        "blue_lower",
+        "blue_upper",
+    }
+    if required_hsv_keys.issubset(t2):
+        configured_hsv_ranges = {
+            "red1": (list(t2["red_lower1"]), list(t2["red_upper1"])),
+            "red2": (list(t2["red_lower2"]), list(t2["red_upper2"])),
+            "yellow": (list(t2["yellow_lower"]), list(t2["yellow_upper"])),
+            "blue": (list(t2["blue_lower"]), list(t2["blue_upper"])),
+        }
+
     default_circle = dict(dp=1.2, min_dist=30, param1=120, param2=40, min_radius=10, max_radius=100)
     default_triangle = dict(
         approx_eps_ratio=0.12, max_side_ratio=5.0, min_red_ratio=None, min_yellow_fill=0.0
@@ -98,6 +117,7 @@ def load_pipeline_config(
             include_achromatic=bool(t2.get("include_achromatic", False)),
             achromatic_dilate_ksize=int(t2.get("achromatic_dilate_ksize", 9)),
             fill_holes=bool(t2.get("fill_holes", True)),
+            hsv_ranges=configured_hsv_ranges,
         ),
         "task2_union": dict(
             nms_iou_thresh=t2_union.get("nms_iou_thresh", 0.4),
@@ -164,10 +184,14 @@ def process_image_to_rois(
     enhanced = preprocess_task1(image_bgr, **params["task1"])
     union_nms_thr = params["task2_union"].get("nms_iou_thresh", 0.4)
 
+    hsv_set = params["task2_union"]["hsv_set"]
+    if params["task2"].get("union_hsv_sets"):
+        hsv_set = sorted(set([int(hsv_set), 2 if int(hsv_set) != 2 else 1]))
+
     union_boxes, union_components = build_union_boxes(
         enhanced,
         iou_thresh=union_nms_thr,
-        hsv_set=params["task2_union"]["hsv_set"],
+        hsv_set=hsv_set,
         mser_delta=params["task2_union"]["mser_delta"],
         canny_low=params["task2_union"]["canny_low"],
         canny_high=params["task2_union"]["canny_high"],
@@ -175,6 +199,7 @@ def process_image_to_rois(
         hsv_min_extent=params["task2_union"]["hsv_min_extent"],
         mser_ar_range=params["task2_union"]["mser_ar_range"],
         mser_min_extent=params["task2_union"]["mser_min_extent"],
+        hsv_ranges=params["task2"].get("hsv_ranges"),
     )
     contour_items: List[Dict[str, Any]] = []
     hsv_list = union_components.get("hsv", [])
@@ -211,6 +236,11 @@ def process_image_to_rois(
         include_achromatic=include_achromatic,
         achromatic_dilate_ksize=dilate_k,
         fill_holes=fill_holes,
+        ranges=(
+            params["task2"].get("hsv_ranges")
+            if int(debug_set_number) == 1
+            else None
+        ),
     )
     if params["task2"].get("union_hsv_sets"):
         other = 2 if debug_set_number != 2 else 1

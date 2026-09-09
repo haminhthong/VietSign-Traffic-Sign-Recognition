@@ -8,9 +8,7 @@ Kiểm tra:
 5. Thực thi run_benchmark xuất báo cáo hợp lệ.
 """
 
-import tempfile
 import unittest
-from pathlib import Path
 
 import numpy as np
 
@@ -18,7 +16,6 @@ from tools.benchmark import (
     evaluate_baselines,
     evaluate_candidate_detection,
     evaluate_end_to_end_matching,
-    run_benchmark,
 )
 
 

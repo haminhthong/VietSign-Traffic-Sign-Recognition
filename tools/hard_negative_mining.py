@@ -14,20 +14,22 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-import numpy as np
+from typing import Any, Dict, List, Optional
 
 # Đảm bảo import được src khi chạy trực tiếp từ thư mục tools/
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.classifier import load_model
-from src.data_loader import load_image
-from src.feature_extraction import extract_hog_features
-from src.pipeline import _binary_sign_proba, load_pipeline_config, process_image_to_rois
-from src.utils import compute_iou, read_label_boxes
+from src.classifier import load_model  # noqa: E402
+from src.data_loader import load_image  # noqa: E402
+from src.feature_extraction import extract_hog_features  # noqa: E402
+from src.pipeline import (  # noqa: E402
+    _binary_sign_proba,
+    load_pipeline_config,
+    process_image_to_rois,
+)
+from src.utils import compute_iou, read_label_boxes  # noqa: E402
 
 
 def mine_hard_negatives_from_image(
@@ -163,8 +165,13 @@ def main():
 
     print("=== VIETSIGN VISION HARD-NEGATIVE MINING ===")
     params, project_root, _ = load_pipeline_config()
-    train_list_path = Path(args.train_list)
-    label_dir = Path(args.label_dir)
+
+    def resolve_path(value: str) -> Path:
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else project_root / path
+
+    train_list_path = resolve_path(args.train_list)
+    label_dir = resolve_path(args.label_dir)
 
     train_images: List[Path] = []
     if train_list_path.is_file():
@@ -179,7 +186,7 @@ def main():
                 train_images.append(p)
 
     if not train_images:
-        data_dir = Path(args.data_dir)
+        data_dir = resolve_path(args.data_dir)
         if data_dir.is_dir():
             train_images = sorted(list(data_dir.glob("*.jpg")) + list(data_dir.glob("*.png")))
 
@@ -197,7 +204,7 @@ def main():
         train_images,
         label_dir,
         params,
-        output_path=Path(args.output),
+        output_path=resolve_path(args.output),
         clf_bin=clf_bin,
         scaler_bin=scaler_bin,
         hard_threshold=args.hard_thresh,

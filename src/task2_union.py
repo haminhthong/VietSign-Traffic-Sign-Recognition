@@ -8,7 +8,7 @@ Kết hợp các kỹ thuật trích xuất vùng đề xuất (Candidate Boundi
 Sau đó áp dụng thuật toán NMS (Non-Maximum Suppression) dựa trên chỉ số IoU để loại bỏ trùng lặp.
 """
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -24,6 +24,7 @@ def hsv_boxes(
     max_area_ratio: float = 0.3,
     ar_range: Tuple[float, float] = (0.4, 2.5),
     min_extent: float = 0.25,
+    ranges: Optional[Dict[str, Tuple[List[int], List[int]]]] = None,
 ) -> List[Tuple[int, int, int, int]]:
     """Trích xuất bounding boxes ứng viên từ mặt nạ phân đoạn màu HSV.
 
@@ -34,6 +35,7 @@ def hsv_boxes(
         max_area_ratio (float): Tỷ lệ diện tích tối đa so với toàn ảnh. Mặc định 0.3.
         ar_range (Tuple[float, float]): Tỷ lệ khung hình (w/h) cho phép (min, max).
         min_extent (float): Tỷ lệ lấp đầy (contour_area / bounding_box_area) tối thiểu.
+        ranges (Optional[Dict]): Bộ ngưỡng HSV tùy chỉnh cho set_number.
 
     Returns:
         List[Tuple[int, int, int, int]]: Danh sách các hộp dạng (x, y, w, h).
@@ -42,8 +44,8 @@ def hsv_boxes(
         return []
 
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-    ranges = get_hsv_ranges(set_number)
-    mask, _, _, _ = generate_combined_mask(hsv, ranges)
+    hsv_ranges = ranges if ranges is not None else get_hsv_ranges(set_number)
+    mask, _, _, _ = generate_combined_mask(hsv, hsv_ranges)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     h_img, w_img = img_bgr.shape[:2]
@@ -210,7 +212,7 @@ def merge_boxes_nms(
 
 def build_union_boxes(
     img_bgr: np.ndarray,
-    hsv_set: int = 1,
+    hsv_set: Union[int, List[int]] = 1,
     mser_delta: int = 5,
     canny_low: int = 50,
     canny_high: int = 150,
@@ -219,6 +221,7 @@ def build_union_boxes(
     hsv_min_extent: float = 0.25,
     mser_ar_range: Tuple[float, float] = (0.6, 1.6),
     mser_min_extent: float = 0.2,
+    hsv_ranges: Optional[Dict[str, Tuple[List[int], List[int]]]] = None,
 ) -> Tuple[List[Tuple[int, int, int, int]], Dict[str, List[Tuple[int, int, int, int]]]]:
     """Hợp nhất ứng viên từ cả 3 nguồn (HSV + MSER + Edge Hull) và lọc bằng NMS.
 
@@ -233,6 +236,7 @@ def build_union_boxes(
         hsv_min_extent (float): Extent tối thiểu cho HSV.
         mser_ar_range (Tuple[float, float]): Dải aspect ratio cho MSER.
         mser_min_extent (float): Extent tối thiểu cho MSER.
+        hsv_ranges (Optional[Dict]): Ngưỡng HSV tùy chỉnh áp dụng cho set 1.
 
     Returns:
         Tuple[List[Tuple[int, int, int, int]], Dict[str, List[Tuple[int, int, int, int]]]]:
@@ -244,7 +248,21 @@ def build_union_boxes(
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     gray_blur = cv2.GaussianBlur(gray, (5, 5), 1.0)
 
-    b_hsv = hsv_boxes(img_bgr, set_number=hsv_set, ar_range=hsv_ar_range, min_extent=hsv_min_extent)
+    hsv_sets = [hsv_set] if isinstance(hsv_set, int) else list(hsv_set)
+    if not hsv_sets:
+        raise ValueError("hsv_set phải là một số hoặc danh sách preset không rỗng")
+
+    b_hsv: List[Tuple[int, int, int, int]] = []
+    for hsv_index in hsv_sets:
+        b_hsv.extend(
+            hsv_boxes(
+                img_bgr,
+                set_number=hsv_index,
+                ar_range=hsv_ar_range,
+                min_extent=hsv_min_extent,
+                ranges=hsv_ranges if hsv_index == 1 else None,
+            )
+        )
     b_mser = mser_boxes(
         gray_blur, delta=mser_delta, ar_range=mser_ar_range, min_extent=mser_min_extent
     )

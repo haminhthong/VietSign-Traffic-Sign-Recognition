@@ -19,11 +19,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import numpy as np
 from PIL import Image
 
-# Đảm bảo import được src khi chạy trực tiếp từ thư mục tools/
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
 try:
     import imagehash
     HAS_IMAGEHASH = True
@@ -391,9 +386,15 @@ def main():
     parser.add_argument("--seed", type=int, default=42, help="Hạt giống ngẫu nhiên.")
     args = parser.parse_args()
 
-    data_path = Path(args.data_dir)
-    label_path = Path(args.label_dir)
-    out_path = Path(args.output_dir)
+    project_root = Path(__file__).resolve().parents[1]
+
+    def resolve_path(value: str) -> Path:
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else project_root / path
+
+    data_path = resolve_path(args.data_dir)
+    label_path = resolve_path(args.label_dir)
+    out_path = resolve_path(args.output_dir)
 
     if not data_path.is_dir():
         print(f"[ERROR] Thư mục dữ liệu không tồn tại: {data_path}")

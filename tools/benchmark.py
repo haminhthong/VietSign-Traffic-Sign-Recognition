@@ -15,7 +15,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score
@@ -25,10 +25,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.classifier import load_model
-from src.data_loader import load_image
-from src.pipeline import classify_rois, load_pipeline_config, process_image_to_rois
-from src.utils import box_xywh_to_xyxy, compute_iou, read_label_boxes
+from src.classifier import load_model  # noqa: E402
+from src.data_loader import load_image  # noqa: E402
+from src.pipeline import classify_rois, load_pipeline_config, process_image_to_rois  # noqa: E402
+from src.utils import box_xywh_to_xyxy, compute_iou, read_label_boxes  # noqa: E402
 
 
 def evaluate_candidate_detection(
@@ -404,9 +404,14 @@ def main():
     args = parser.parse_args()
 
     print("=== VIETSIGN VISION INDEPENDENT BENCHMARK ===")
-    test_list_path = Path(args.test_list)
-    label_dir = Path(args.label_dir)
     params, project_root, _ = load_pipeline_config()
+
+    def resolve_path(value: str) -> Path:
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else project_root / path
+
+    test_list_path = resolve_path(args.test_list)
+    label_dir = resolve_path(args.label_dir)
 
     test_image_paths: List[Path] = []
     if test_list_path.is_file():
@@ -421,7 +426,7 @@ def main():
                 test_image_paths.append(p)
 
     if not test_image_paths:
-        data_dir = Path(args.data_dir)
+        data_dir = resolve_path(args.data_dir)
         if data_dir.is_dir():
             test_image_paths = sorted(list(data_dir.glob("*.jpg")) + list(data_dir.glob("*.png")))
             print(f"[NOTE] Không tìm thấy test_files.txt; fallback chạy benchmark trên {len(test_image_paths)} ảnh tại '{data_dir}'.")
@@ -429,7 +434,7 @@ def main():
     print(f"[INFO] Bắt đầu đánh giá benchmark trên {len(test_image_paths)} ảnh kiểm định...")
     results = run_benchmark(test_image_paths, label_dir, params, project_root)
 
-    out_path = Path(args.output)
+    out_path = resolve_path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
 

@@ -5,7 +5,7 @@ dựa trên các dải màu chính: Đỏ (Red - biển cấm/cảnh báo), Xanh
 Vàng (Yellow - biển cảnh báo), cùng với vùng phi sắc (White/Black).
 """
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -132,6 +132,7 @@ def segment_task2(
     include_achromatic: bool = False,
     achromatic_dilate_ksize: int = 9,
     fill_holes: bool = False,
+    ranges: Optional[Dict[str, Tuple[List[int], List[int]]]] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Phân đoạn màu ảnh BGR đầu vào theo quy trình Task 2.
 
@@ -141,6 +142,7 @@ def segment_task2(
         include_achromatic (bool): Có hợp nhất vùng trắng/đen hay không. Mặc định False.
         achromatic_dilate_ksize (int): Kích thước kernel giãn nở mặt nạ phi sắc. Mặc định 9.
         fill_holes (bool): Lấp đầy lỗ hổng trong mặt nạ hay không. Mặc định False.
+        ranges (Optional[Dict]): Bộ ngưỡng HSV tùy chỉnh. Nếu bỏ trống, dùng preset theo set_number.
 
     Returns:
         Tuple[np.ndarray, np.ndarray]: (Ảnh sau phân đoạn BGR, mặt nạ nhị phân kết hợp).
@@ -152,8 +154,8 @@ def segment_task2(
         raise ValueError("Ảnh đầu vào rỗng hoặc không hợp lệ")
 
     img_hsv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2HSV)
-    ranges = get_hsv_ranges(set_number)
-    combined_mask, _, _, _ = generate_combined_mask(img_hsv, ranges)
+    hsv_ranges = ranges if ranges is not None else get_hsv_ranges(set_number)
+    combined_mask, _, _, _ = generate_combined_mask(img_hsv, hsv_ranges)
 
     if include_achromatic:
         achromatic_mask = build_achromatic_mask(img_hsv)
