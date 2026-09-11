@@ -133,7 +133,7 @@ Một detection recognition có dạng:
 
 ~~~text
 .
-├── .github/workflows/quality.yml   # CI: compile, Ruff, Pytest, CLI smoke test
+├── .github/workflows/quality.yml   # CI: compile, Ruff lint/format, Pytest, CLI smoke test
 ├── config.yaml                     # tham số runtime và split
 ├── pyproject.toml                  # package, dependency và tool configuration
 ├── requirements.txt                # môi trường đầy đủ cho notebook/tooling
@@ -260,11 +260,12 @@ Chạy local:
 ~~~powershell
 python -m compileall -q src tests tools
 ruff check src tests tools
+ruff format --check src tests tools
 python -m pytest -q
 python -m src.cli --help
 ~~~
 
-Workflow .github/workflows/quality.yml chạy trên Python 3.10/3.11/3.12 và thực hiện đúng bốn kiểm tra: compile src/tests/tools, Ruff cho mã nguồn + tool + test, test tự động và CLI help smoke test. Không có bước nào yêu cầu model hoặc full dataset, nên CI có thể chạy trên checkout mẫu.
+Workflow .github/workflows/quality.yml chạy trên Python 3.10/3.11/3.12 và thực hiện năm kiểm tra: compile src/tests/tools, Ruff lint, Ruff format check, test tự động và CLI help smoke test. Không có bước nào yêu cầu model hoặc full dataset, nên CI có thể chạy trên checkout mẫu.
 
 ## Chỉ số và giới hạn diễn giải
 

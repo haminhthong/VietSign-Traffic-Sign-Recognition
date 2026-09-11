@@ -222,7 +222,11 @@ def analyze_confusion_and_per_class_f1(
 
     per_class = []
     for cls_idx, p, r, f, s in zip(labels, prec, rec, f1, supp):
-        name = class_names[int(cls_idx)] if class_names and int(cls_idx) < len(class_names) else f"Class_{int(cls_idx)}"
+        name = (
+            class_names[int(cls_idx)]
+            if class_names and int(cls_idx) < len(class_names)
+            else f"Class_{int(cls_idx)}"
+        )
         per_class.append(
             {
                 "class_id": int(cls_idx),
@@ -243,8 +247,16 @@ def analyze_confusion_and_per_class_f1(
     for i, true_lbl in enumerate(labels):
         for j, pred_lbl in enumerate(labels):
             if i != j and cm[i, j] > 0:
-                true_name = class_names[int(true_lbl)] if class_names and int(true_lbl) < len(class_names) else f"Class_{int(true_lbl)}"
-                pred_name = class_names[int(pred_lbl)] if class_names and int(pred_lbl) < len(class_names) else f"Class_{int(pred_lbl)}"
+                true_name = (
+                    class_names[int(true_lbl)]
+                    if class_names and int(true_lbl) < len(class_names)
+                    else f"Class_{int(true_lbl)}"
+                )
+                pred_name = (
+                    class_names[int(pred_lbl)]
+                    if class_names and int(pred_lbl) < len(class_names)
+                    else f"Class_{int(pred_lbl)}"
+                )
                 confusion_pairs.append(
                     {
                         "true_class_id": int(true_lbl),

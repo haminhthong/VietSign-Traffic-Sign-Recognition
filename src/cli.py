@@ -13,16 +13,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.data_loader import list_image_paths, load_image, save_image
-from src.pipeline import (
-    draw_candidates,
-    draw_detections,
-    load_pipeline_config,
-    load_pipeline_models,
-    process_image_to_rois,
-    run_pipeline_on_image,
-)
-
 
 def build_parser() -> argparse.ArgumentParser:
     """Xây dựng bộ phân tích cú pháp tham số dòng lệnh (ArgumentParser).
@@ -80,6 +70,8 @@ def _collect_images(input_path: Path) -> List[Path]:
     if input_path.is_file():
         return [input_path]
     if input_path.is_dir():
+        from src.data_loader import list_image_paths
+
         return list_image_paths(input_path)
     raise FileNotFoundError(f"Không tìm thấy tệp hoặc thư mục đầu vào: {input_path}")
 
@@ -110,6 +102,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     images = _collect_images(args.input)
     if not images:
         raise ValueError(f"Không tìm thấy ảnh hợp lệ (.jpg, .jpeg, .png) tại: {args.input}")
+
+    from src.data_loader import load_image, save_image
+    from src.pipeline import (
+        draw_candidates,
+        draw_detections,
+        load_pipeline_config,
+        load_pipeline_models,
+        process_image_to_rois,
+        run_pipeline_on_image,
+    )
 
     params, project_root, _ = load_pipeline_config(args.project_root)
     output_dir = _resolve_project_path(args.output, project_root)

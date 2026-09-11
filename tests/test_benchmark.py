@@ -31,7 +31,7 @@ class TestBenchmarkEngine(unittest.TestCase):
         # Pred 2: Khớp trượt GT 2 (IoU < 0.5)
         # Pred 3: Vùng nền hoàn toàn
         pred_boxes = [
-            [12, 12, 48, 48],    # IoU cao với GT 1 -> TP
+            [12, 12, 48, 48],  # IoU cao với GT 1 -> TP
             [120, 120, 40, 40],  # IoU thấp với GT 2 -> FP
             [200, 200, 30, 30],  # Nền -> FP
         ]

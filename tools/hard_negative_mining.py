@@ -71,7 +71,9 @@ def mine_hard_negatives_from_image(
         if max_iou >= max_iou_negative:
             continue
 
-        feat, _ = extract_hog_features(roi["crop"], resize_to=resize_to, visualize=False, **hog_params)
+        feat, _ = extract_hog_features(
+            roi["crop"], resize_to=resize_to, visualize=False, **hog_params
+        )
 
         p_sign = 0.0
         is_hard = False
@@ -155,12 +157,22 @@ def main():
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
 
-    parser = argparse.ArgumentParser(description="Khai thác mẫu âm khó (Hard-Negative Mining) cho Tier-1 SVM.")
-    parser.add_argument("--train-list", type=str, default="data/processed/train_files.txt", help="Danh sách train.")
-    parser.add_argument("--data-dir", type=str, default="data/raw/images", help="Thư mục ảnh gốc dự phòng.")
+    parser = argparse.ArgumentParser(
+        description="Khai thác mẫu âm khó (Hard-Negative Mining) cho Tier-1 SVM."
+    )
+    parser.add_argument(
+        "--train-list", type=str, default="data/processed/train_files.txt", help="Danh sách train."
+    )
+    parser.add_argument(
+        "--data-dir", type=str, default="data/raw/images", help="Thư mục ảnh gốc dự phòng."
+    )
     parser.add_argument("--label-dir", type=str, default="data/raw/labels", help="Thư mục nhãn.")
-    parser.add_argument("--output", type=str, default="outputs/hard_negatives.json", help="Tệp xuất báo cáo.")
-    parser.add_argument("--hard-thresh", type=float, default=0.3, help="Ngưỡng điểm Tier-1 coi là hard negative.")
+    parser.add_argument(
+        "--output", type=str, default="outputs/hard_negatives.json", help="Tệp xuất báo cáo."
+    )
+    parser.add_argument(
+        "--hard-thresh", type=float, default=0.3, help="Ngưỡng điểm Tier-1 coi là hard negative."
+    )
     args = parser.parse_args()
 
     print("=== VIETSIGN VISION HARD-NEGATIVE MINING ===")
@@ -175,7 +187,11 @@ def main():
 
     train_images: List[Path] = []
     if train_list_path.is_file():
-        lines = [line.strip() for line in train_list_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        lines = [
+            line.strip()
+            for line in train_list_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         for line in lines:
             p = project_root / line
             if not p.is_file():
@@ -197,7 +213,9 @@ def main():
             clf_bin, scaler_bin = load_model(bin_path)
             print("[INFO] Đã nạp Tier-1 Binary SVM để sàng lọc False Positives có độ tự tin cao.")
     except Exception:
-        print("[INFO] Chưa có Tier-1 model pre-trained; khai thác toàn bộ vùng đề xuất nền (IoU < 0.2).")
+        print(
+            "[INFO] Chưa có Tier-1 model pre-trained; khai thác toàn bộ vùng đề xuất nền (IoU < 0.2)."
+        )
 
     print(f"[INFO] Bắt đầu quét {len(train_images)} ảnh huấn luyện...")
     report = run_hard_negative_mining(

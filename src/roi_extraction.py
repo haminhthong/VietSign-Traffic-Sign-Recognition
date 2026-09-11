@@ -324,7 +324,9 @@ def merge_candidates(
         if best_iou >= iou_dedup_threshold and best_match_idx >= 0:
             # Hợp nhất bằng chứng: Thêm HOUGH_CIRCLE vào nguồn gốc của candidate đã có
             target = merged[best_match_idx]
-            combined_sources = list(dict.fromkeys(target.get("proposal_sources", []) + c_it["proposal_sources"]))
+            combined_sources = list(
+                dict.fromkeys(target.get("proposal_sources", []) + c_it["proposal_sources"])
+            )
             target["proposal_sources"] = combined_sources
             if "vertices" in c_it and "vertices" not in target:
                 target["vertices"] = c_it["vertices"]

@@ -196,7 +196,9 @@ def evaluate_baselines(
         from sklearn.preprocessing import StandardScaler
         from sklearn.svm import LinearSVC
 
-        linear_clf = Pipeline([("scaler", StandardScaler()), ("svc", LinearSVC(dual="auto", max_iter=2000))])
+        linear_clf = Pipeline(
+            [("scaler", StandardScaler()), ("svc", LinearSVC(dual="auto", max_iter=2000))]
+        )
         linear_clf.fit(X_train, y_train)
         y_pred_linear = linear_clf.predict(X_test)
 
@@ -350,11 +352,19 @@ def run_benchmark(
     if models_loaded:
         e2e_recall = e2e_tp / float(total_gt_boxes) if total_gt_boxes > 0 else 0.0
         e2e_precision = e2e_tp / float(e2e_tp + e2e_fp) if (e2e_tp + e2e_fp) > 0 else 0.0
-        e2e_f1 = (2 * e2e_precision * e2e_recall) / (e2e_precision + e2e_recall) if (e2e_precision + e2e_recall) > 0 else 0.0
+        e2e_f1 = (
+            (2 * e2e_precision * e2e_recall) / (e2e_precision + e2e_recall)
+            if (e2e_precision + e2e_recall) > 0
+            else 0.0
+        )
         funnel_report["5_tier2_correct_classified"] = e2e_tp
         funnel_report["6_e2e_recall_percent"] = round(e2e_recall * 100.0, 2)
 
-    status = "benchmark_completed_full" if models_loaded else "candidate_benchmark_completed_models_pending"
+    status = (
+        "benchmark_completed_full"
+        if models_loaded
+        else "candidate_benchmark_completed_models_pending"
+    )
 
     return {
         "status": status,
@@ -378,8 +388,12 @@ def run_benchmark(
             "p95": round(float(np.percentile(latencies, 95)), 2) if latencies else 0.0,
         },
         "end_to_end_metrics": {
-            "e2e_recall": round(e2e_tp / float(total_gt_boxes), 4) if (models_loaded and total_gt_boxes > 0) else None,
-            "e2e_precision": round(e2e_tp / float(e2e_tp + e2e_fp), 4) if (models_loaded and (e2e_tp + e2e_fp) > 0) else None,
+            "e2e_recall": round(e2e_tp / float(total_gt_boxes), 4)
+            if (models_loaded and total_gt_boxes > 0)
+            else None,
+            "e2e_precision": round(e2e_tp / float(e2e_tp + e2e_fp), 4)
+            if (models_loaded and (e2e_tp + e2e_fp) > 0)
+            else None,
             "e2e_f1": round(e2e_f1, 4) if models_loaded else None,
             "e2e_tp": e2e_tp if models_loaded else None,
             "e2e_fp": e2e_fp if models_loaded else None,
@@ -396,11 +410,22 @@ def main():
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
 
-    parser = argparse.ArgumentParser(description="Chạy benchmark kiểm định hệ thống VietSign Vision.")
-    parser.add_argument("--test-list", type=str, default="data/processed/test_files.txt", help="Tệp chứa danh sách test.")
-    parser.add_argument("--data-dir", type=str, default="data/raw/images", help="Thư mục ảnh gốc dự phòng.")
+    parser = argparse.ArgumentParser(
+        description="Chạy benchmark kiểm định hệ thống VietSign Vision."
+    )
+    parser.add_argument(
+        "--test-list",
+        type=str,
+        default="data/processed/test_files.txt",
+        help="Tệp chứa danh sách test.",
+    )
+    parser.add_argument(
+        "--data-dir", type=str, default="data/raw/images", help="Thư mục ảnh gốc dự phòng."
+    )
     parser.add_argument("--label-dir", type=str, default="data/raw/labels", help="Thư mục nhãn.")
-    parser.add_argument("--output", type=str, default="outputs/benchmark_results.json", help="Tệp xuất báo cáo.")
+    parser.add_argument(
+        "--output", type=str, default="outputs/benchmark_results.json", help="Tệp xuất báo cáo."
+    )
     args = parser.parse_args()
 
     print("=== VIETSIGN VISION INDEPENDENT BENCHMARK ===")
@@ -415,7 +440,11 @@ def main():
 
     test_image_paths: List[Path] = []
     if test_list_path.is_file():
-        lines = [line.strip() for line in test_list_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        lines = [
+            line.strip()
+            for line in test_list_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         for line in lines:
             p = project_root / line
             if not p.is_file():
@@ -429,7 +458,9 @@ def main():
         data_dir = resolve_path(args.data_dir)
         if data_dir.is_dir():
             test_image_paths = sorted(list(data_dir.glob("*.jpg")) + list(data_dir.glob("*.png")))
-            print(f"[NOTE] Không tìm thấy test_files.txt; fallback chạy benchmark trên {len(test_image_paths)} ảnh tại '{data_dir}'.")
+            print(
+                f"[NOTE] Không tìm thấy test_files.txt; fallback chạy benchmark trên {len(test_image_paths)} ảnh tại '{data_dir}'."
+            )
 
     print(f"[INFO] Bắt đầu đánh giá benchmark trên {len(test_image_paths)} ảnh kiểm định...")
     results = run_benchmark(test_image_paths, label_dir, params, project_root)
@@ -444,7 +475,9 @@ def main():
     print(f"  - Proposals per Image   : {c_met.get('proposals_per_image', 0):.2f}")
     print(f"  - FP Proposals / Image  : {c_met.get('fp_proposals_per_image', 0):.2f}")
     lat = results.get("latency_ms", {})
-    print(f"  - Latency trung bình    : {lat.get('mean', 0):.2f} ms/ảnh (p50: {lat.get('p50', 0):.2f} ms)")
+    print(
+        f"  - Latency trung bình    : {lat.get('mean', 0):.2f} ms/ảnh (p50: {lat.get('p50', 0):.2f} ms)"
+    )
     if results.get("models_loaded"):
         e2e = results.get("end_to_end_metrics", {})
         print(f"  - End-to-End Recall     : {e2e.get('e2e_recall', 0):.4f}")

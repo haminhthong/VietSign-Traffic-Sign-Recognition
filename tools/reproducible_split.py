@@ -21,6 +21,7 @@ from PIL import Image
 
 try:
     import imagehash
+
     HAS_IMAGEHASH = True
 except ImportError:
     HAS_IMAGEHASH = False
@@ -79,7 +80,9 @@ def extract_sequence_id(filepath: Path) -> str:
         return parent_name
 
     stem = filepath.stem.lower()
-    match = re.match(r"^((?:video|seq|route|trip|cam)[_-]?[0-9a-zA-Z]+?)(?:[_-](?:frame|img|f)?[_-]?\d+)+$", stem)
+    match = re.match(
+        r"^((?:video|seq|route|trip|cam)[_-]?[0-9a-zA-Z]+?)(?:[_-](?:frame|img|f)?[_-]?\d+)+$", stem
+    )
     if match:
         return match.group(1)
 
@@ -278,7 +281,9 @@ def group_aware_split(
         if curr_train + c["size"] <= target_train or (curr_train == 0 and target_train > 0):
             train_c.append(c)
             curr_train += c["size"]
-        elif curr_val + c["size"] <= target_val or (curr_val == 0 and target_val > 0 and len(clusters) > 2):
+        elif curr_val + c["size"] <= target_val or (
+            curr_val == 0 and target_val > 0 and len(clusters) > 2
+        ):
             val_c.append(c)
             curr_val += c["size"]
         else:
@@ -378,9 +383,15 @@ def main():
         description="Phân chia train/val/test split theo nhóm chuỗi / pHash chống Data Leakage."
     )
     parser.add_argument("--data-dir", type=str, default="data/raw/images", help="Thư mục ảnh gốc.")
-    parser.add_argument("--label-dir", type=str, default="data/raw/labels", help="Thư mục nhãn gốc.")
-    parser.add_argument("--output-dir", type=str, default="data/processed", help="Thư mục xuất split list.")
-    parser.add_argument("--phash-thresh", type=int, default=8, help="Ngưỡng pHash gom nhóm gần trùng.")
+    parser.add_argument(
+        "--label-dir", type=str, default="data/raw/labels", help="Thư mục nhãn gốc."
+    )
+    parser.add_argument(
+        "--output-dir", type=str, default="data/processed", help="Thư mục xuất split list."
+    )
+    parser.add_argument(
+        "--phash-thresh", type=int, default=8, help="Ngưỡng pHash gom nhóm gần trùng."
+    )
     parser.add_argument("--train-ratio", type=float, default=0.7, help="Tỷ lệ tập Train.")
     parser.add_argument("--val-ratio", type=float, default=0.15, help="Tỷ lệ tập Validation.")
     parser.add_argument("--seed", type=int, default=42, help="Hạt giống ngẫu nhiên.")
@@ -412,7 +423,9 @@ def main():
     train_c, val_c, test_c = group_aware_split(
         clusters, train_ratio=args.train_ratio, val_ratio=args.val_ratio, seed=args.seed
     )
-    summary = export_split_manifest(out_path, train_c, val_c, test_c, base_dir=data_path.parent.parent)
+    summary = export_split_manifest(
+        out_path, train_c, val_c, test_c, base_dir=data_path.parent.parent
+    )
 
     print(f"[SUCCESS] Phân chia dữ liệu Leakage-Safe hoàn tất tại '{out_path}':")
     print(f"  - Train: {summary['train']} ảnh ({len(train_c)} nhóm)")

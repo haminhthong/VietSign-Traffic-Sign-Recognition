@@ -206,14 +206,20 @@ def process_image_to_rois(
     mser_list = union_components.get("mser", [])
     edge_list = union_components.get("edge_hull", [])
 
-    for (x, y, w, h) in union_boxes:
+    for x, y, w, h in union_boxes:
         box_xyxy = (x, y, x + w, y + h)
         sources: List[str] = []
-        if any(compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in hsv_list):
+        if any(
+            compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in hsv_list
+        ):
             sources.append("HSV")
-        if any(compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in mser_list):
+        if any(
+            compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in mser_list
+        ):
             sources.append("MSER")
-        if any(compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in edge_list):
+        if any(
+            compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in edge_list
+        ):
             sources.append("CANNY_HULL")
         if not sources:
             sources.append("CONTOUR")
@@ -236,11 +242,7 @@ def process_image_to_rois(
         include_achromatic=include_achromatic,
         achromatic_dilate_ksize=dilate_k,
         fill_holes=fill_holes,
-        ranges=(
-            params["task2"].get("hsv_ranges")
-            if int(debug_set_number) == 1
-            else None
-        ),
+        ranges=(params["task2"].get("hsv_ranges") if int(debug_set_number) == 1 else None),
     )
     if params["task2"].get("union_hsv_sets"):
         other = 2 if debug_set_number != 2 else 1

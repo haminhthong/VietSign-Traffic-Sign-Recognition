@@ -37,7 +37,9 @@ class TestReproducibleSplit(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _create_dummy_image(self, filename: str, color: tuple = (100, 100, 100), size=(64, 64)) -> Path:
+    def _create_dummy_image(
+        self, filename: str, color: tuple = (100, 100, 100), size=(64, 64)
+    ) -> Path:
         p = self.img_dir / filename
         img = Image.new("RGB", size, color)
         img.save(p)
@@ -69,7 +71,9 @@ class TestReproducibleSplit(unittest.TestCase):
         images = [f1, f2, f3, f4, f5, f6]
         clusters = cluster_images(images, label_dir=self.label_dir, phash_thresh=8)
 
-        train_c, val_c, test_c = group_aware_split(clusters, train_ratio=0.5, val_ratio=0.25, seed=42)
+        train_c, val_c, test_c = group_aware_split(
+            clusters, train_ratio=0.5, val_ratio=0.25, seed=42
+        )
 
         def get_seqs(cluster_list):
             seqs = set()
@@ -116,7 +120,9 @@ class TestReproducibleSplit(unittest.TestCase):
         self._create_dummy_label("seq2_01.txt", class_id=3)
 
         clusters = cluster_images([f1, f2], label_dir=self.label_dir, phash_thresh=8)
-        train_c, val_c, test_c = group_aware_split(clusters, train_ratio=0.5, val_ratio=0.5, seed=42)
+        train_c, val_c, test_c = group_aware_split(
+            clusters, train_ratio=0.5, val_ratio=0.5, seed=42
+        )
 
         export_split_manifest(self.out_dir, train_c, val_c, test_c, base_dir=self.temp_dir)
         manifest_file = self.out_dir / "manifest.json"
