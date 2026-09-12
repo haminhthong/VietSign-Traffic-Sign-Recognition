@@ -1,16 +1,16 @@
 {
-  "status": "candidate_benchmark_completed_models_pending",
-  "models_loaded": false,
+  "status": "benchmark_completed_full",
+  "models_loaded": true,
   "test_images_evaluated": 2,
   "gt_signs_evaluated": 8,
   "candidate_proposal_metrics": {
-    "proposal_recall_at_iou50": 1.0,
-    "proposal_precision": 0.0113,
-    "proposals_per_image": 354.0,
-    "fp_proposals_per_image": 350.0,
-    "tp_proposals": 8,
-    "fp_proposals": 700,
-    "fn_proposals": 0
+    "proposal_recall_at_iou50": 0.625,
+    "proposal_precision": 0.1316,
+    "proposals_per_image": 19.0,
+    "fp_proposals_per_image": 16.5,
+    "tp_proposals": 5,
+    "fp_proposals": 33,
+    "fn_proposals": 3
   },
   "size_slices": {
     "small (<32x32)": {
@@ -20,8 +20,8 @@
     },
     "medium (32-96)": {
       "gt_count": 8,
-      "matched_proposals": 8,
-      "proposal_recall_at_iou50": 1.0
+      "matched_proposals": 5,
+      "proposal_recall_at_iou50": 0.625
     },
     "large (>96x96)": {
       "gt_count": 0,
@@ -31,21 +31,23 @@
   },
   "stage_funnel": {
     "1_gt_signs_total": 8,
-    "2_candidate_proposals_captured": 8,
-    "3_proposal_recall_percent": 100.0,
-    "4_roi_rois_extracted_total": 708
+    "2_candidate_proposals_captured": 5,
+    "3_proposal_recall_percent": 62.5,
+    "4_roi_rois_extracted_total": 38,
+    "5_tier2_correct_classified": 0,
+    "6_e2e_recall_percent": 0.0
   },
   "latency_ms": {
-    "mean": 3099.73,
-    "p50": 3099.73,
-    "p95": 3583.81
+    "mean": 144.02,
+    "p50": 144.02,
+    "p95": 240.21
   },
   "end_to_end_metrics": {
-    "e2e_recall": null,
+    "e2e_recall": 0.0,
     "e2e_precision": null,
-    "e2e_f1": null,
-    "e2e_tp": null,
-    "e2e_fp": null
+    "e2e_f1": 0.0,
+    "e2e_tp": 0,
+    "e2e_fp": 0
   },
   "disclaimer": "Benchmark được thực thi trên tập dữ liệu khả dụng hiện tại. Để tái lập toàn bộ chỉ số SVM 52 lớp lịch sử, vui lòng huấn luyện lại model với full dataset."
 }

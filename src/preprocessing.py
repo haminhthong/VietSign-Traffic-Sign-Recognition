@@ -1,10 +1,12 @@
-"""Module Tiền Xử Lý Ảnh (Task 1: Preprocessing).
+"""Module Tiền Xử Lý Ảnh (Preprocessing).
 
-Cung cấp các phương pháp tiền xử lý ảnh truyền thống giúp giảm nhiễu hạt (Salt-and-pepper noise)
-và cân bằng độ tương phản động (Dynamic CLAHE) trước khi đưa vào các bước phân đoạn màu.
+Cung cấp các kỹ thuật tiền xử lý ảnh truyền thống:
+- Lọc nhiễu muối tiêu (Salt-and-pepper noise) bằng Median Filter
+- Tăng cường tương phản cục bộ tự thích nghi (CLAHE) trên kênh L của không gian màu LAB
+  nhằm giữ nguyên thông tin màu sắc (kênh A và B) trước khi phân đoạn màu HSV.
 """
 
-from typing import Tuple
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -14,8 +16,8 @@ def apply_median_filter(image_bgr: np.ndarray, kernel_size: int = 3) -> np.ndarr
     """Lọc nhiễu hạt (Salt-and-pepper noise) bằng lọc Median Filter.
 
     Args:
-        image_bgr (np.ndarray): Ảnh đầu vào định dạng BGR (OpenCV).
-        kernel_size (int): Kích thước cửa sổ lọc median (phải là số nguyên lẻ >= 3). Mặc định là 3.
+        image_bgr (np.ndarray): Ảnh đầu vào định dạng BGR.
+        kernel_size (int): Kích thước cửa sổ lọc median (phải là số nguyên lẻ >= 3). Mặc định 3.
 
     Returns:
         np.ndarray: Ảnh đã được khử nhiễu.
@@ -28,22 +30,18 @@ def apply_median_filter(image_bgr: np.ndarray, kernel_size: int = 3) -> np.ndarr
     if not isinstance(kernel_size, int) or kernel_size < 3 or kernel_size % 2 == 0:
         raise ValueError("kernel_size phải là số nguyên lẻ và lớn hơn hoặc bằng 3")
 
+    image_bgr = np.ascontiguousarray(image_bgr)
     return cv2.medianBlur(image_bgr, kernel_size)
 
 
 def compute_dynamic_clip_limit(l_channel: np.ndarray) -> Tuple[float, float]:
-    """Tính clipLimit động cho CLAHE dựa trên độ lệch chuẩn (Standard Deviation) của kênh L.
-
-    Áp dụng heuristic nội bộ cần được kiểm chứng bằng ablation trên validation:
-    - std < 50: Ảnh độ tương phản rất thấp/tối -> clipLimit = 4.0 (Tăng tương phản mạnh)
-    - 50 <= std < 100: Ảnh độ tương phản trung bình -> clipLimit = 2.0 (Tăng tương phản vừa)
-    - std >= 100: Ảnh đã rõ nét -> clipLimit = 1.0 (Giữ nguyên, tránh làm chói ảnh)
+    """Tính clipLimit cho CLAHE dựa trên độ lệch chuẩn của kênh L.
 
     Args:
         l_channel (np.ndarray): Kênh Lightness (L) từ không gian màu LAB.
 
     Returns:
-        Tuple[float, float]: (clip_limit, std_value)
+        Tuple[float, float]: (clip_limit, std_value).
     """
     std = float(np.std(l_channel))
 
@@ -58,18 +56,21 @@ def compute_dynamic_clip_limit(l_channel: np.ndarray) -> Tuple[float, float]:
 
 
 def apply_clahe_lab(
-    image_bgr: np.ndarray, tile_grid_size: Tuple[int, int] = (8, 8)
+    image_bgr: np.ndarray,
+    tile_grid_size: Tuple[int, int] = (8, 8),
+    clip_limit: Optional[float] = None,
 ) -> Tuple[np.ndarray, float, float]:
-    """Tăng cường độ tương phản cục bộ tự thích nghi (CLAHE) trên kênh L của không gian màu LAB.
+    """Tăng cường độ tương phản cục bộ (CLAHE) trên kênh L của không gian màu LAB.
 
     Giúp duy trì màu sắc ở kênh A và B mà không bị biến đổi khi thay đổi độ sáng kênh L.
 
     Args:
         image_bgr (np.ndarray): Ảnh BGR đầu vào.
-        tile_grid_size (Tuple[int, int]): Kích thước ma trận ô vuông phân chia ảnh. Mặc định (8, 8).
+        tile_grid_size (Tuple[int, int]): Kích thước ô phân chia ảnh. Mặc định (8, 8).
+        clip_limit (Optional[float]): Ngưỡng giới hạn tương phản. Nếu None, tự tính theo std.
 
     Returns:
-        Tuple[np.ndarray, float, float]: (Ảnh BGR đã tăng cường, clip_limit đã chọn, std kênh L).
+        Tuple[np.ndarray, float, float]: (Ảnh BGR đã tăng cường, clip_limit đã dùng, std kênh L).
 
     Raises:
         ValueError: Nếu ảnh rỗng hoặc tile_grid_size không đúng định dạng.
@@ -82,44 +83,47 @@ def apply_clahe_lab(
     tile_grid_size = (int(tile_grid_size[0]), int(tile_grid_size[1]))
 
     # Chuyển từ BGR sang không gian màu LAB
+    image_bgr = np.ascontiguousarray(image_bgr)
     lab = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB)
     lightness, channel_a, channel_b = cv2.split(lab)
 
-    # Tính ngưỡng clipLimit tự động
-    clip_limit, std = compute_dynamic_clip_limit(lightness)
+    std = float(np.std(lightness))
+    used_clip_limit = (
+        float(clip_limit) if clip_limit is not None else compute_dynamic_clip_limit(lightness)[0]
+    )
 
     # Khởi tạo thuật toán CLAHE và áp dụng lên kênh L
-    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
+    clahe = cv2.createCLAHE(clipLimit=used_clip_limit, tileGridSize=tile_grid_size)
     lightness_enhanced = clahe.apply(lightness)
 
-    # Tái hợp nạp các kênh và chuyển về BGR
+    # Tái hợp các kênh và chuyển về BGR
     lab_enhanced = cv2.merge([lightness_enhanced, channel_a, channel_b])
     enhanced_bgr = cv2.cvtColor(lab_enhanced, cv2.COLOR_LAB2BGR)
 
-    return enhanced_bgr, clip_limit, std
+    return enhanced_bgr, used_clip_limit, std
 
 
-def preprocess_task1(
-    image_bgr: np.ndarray, kernel_size: int = 3, tile_grid_size: Tuple[int, int] = (8, 8)
+def preprocess_image(
+    image_bgr: np.ndarray,
+    kernel_size: int = 3,
+    tile_grid_size: Tuple[int, int] = (8, 8),
+    clip_limit: Optional[float] = 2.0,
 ) -> np.ndarray:
-    """Quy trình tiền xử lý ảnh hoàn chỉnh cho Task 1.
-
-    Luồng xử lý:
-    1. Khử nhiễu Median Filter (kernel_size).
-    2. Cân bằng độ tương phản động CLAHE trên kênh L (không gian màu LAB).
+    """Quy trình tiền xử lý ảnh hoàn chỉnh: Median Filter + LAB CLAHE.
 
     Args:
         image_bgr (np.ndarray): Ảnh BGR gốc.
         kernel_size (int): Kích thước kernel lọc Median. Mặc định 3.
         tile_grid_size (Tuple[int, int]): Kích thước chia lưới CLAHE. Mặc định (8, 8).
+        clip_limit (Optional[float]): Ngưỡng giới hạn CLAHE. Mặc định 2.0.
 
     Returns:
         np.ndarray: Ảnh BGR đã qua tiền xử lý, sẵn sàng cho phân đoạn màu.
     """
-    # Bước 1: Khử nhiễu hạt
     denoised = apply_median_filter(image_bgr, kernel_size=kernel_size)
-
-    # Bước 2: Tăng cường độ tương phản cục bộ tự thích nghi
-    enhanced, _, _ = apply_clahe_lab(denoised, tile_grid_size=tile_grid_size)
-
+    enhanced, _, _ = apply_clahe_lab(denoised, tile_grid_size=tile_grid_size, clip_limit=clip_limit)
     return enhanced
+
+
+# Bí danh tương thích ngược cho codebase cũ
+preprocess_task1 = preprocess_image

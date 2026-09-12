@@ -1,7 +1,9 @@
-"""Module Phân Loại SVM Hai Tầng (Task 6: 2-Tier SVM Classifier).
+"""Module Phân Loại SVM Hai Tầng (Two-Stage SVM Classifier).
 
-Quản lý việc huấn luyện, tinh chỉnh tham số (GridSearchCV), dự đoán xác suất an toàn (predict_proba_safe),
-đánh giá chỉ số (Accuracy, Macro-F1) và lưu/nạp mô hình SVM hai tầng (Binary SVM & Multiclass SVM).
+Quản lý việc huấn luyện, tinh chỉnh tham số (GridSearchCV), dự đoán điểm tin cậy (predict_proba_safe),
+đánh giá chỉ số (Accuracy, Macro-F1, Confusion Matrix) và lưu/nạp mô hình SVM hai tầng:
+- Tầng 1 (Binary SVM): Lọc ứng viên là biển báo hay vùng nền (Sign vs Background).
+- Tầng 2 (Multiclass SVM): Nhận diện cụ thể 52 lớp biển báo giao thông Việt Nam.
 """
 
 from pathlib import Path
@@ -9,7 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import joblib
 import numpy as np
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -62,13 +63,13 @@ def train_svm(
     """Huấn luyện mô hình Support Vector Machine (SVM) với bộ chuẩn hóa StandardScaler.
 
     Args:
-        X_train (np.ndarray): Dữ liệu đặc trưng huấn luyện (ví dụ HOG 1.764 chiều).
+        X_train (np.ndarray): Dữ liệu đặc trưng huấn luyện (HOG 1.764 chiều).
         y_train (np.ndarray): Nhãn tương ứng.
         kernel (str): Loại kernel SVM ('rbf', 'linear', 'poly'). Mặc định 'rbf'.
         C (float): Tham số điều hòa (Regularization). Mặc định 1.0.
         gamma (Union[str, float]): Hệ số kernel gamma. Mặc định 'scale'.
         class_weight (Optional[str]): Trọng số lớp ('balanced' hoặc None).
-        probability (bool): Cho phép tính toán xác suất (probability estimation).
+        probability (bool): Cho phép tính toán xác suất.
         random_state (int): Hạt giống ngẫu nhiên.
 
     Returns:
@@ -107,16 +108,16 @@ def tune_svm(
     Args:
         X_train (np.ndarray): Đặc trưng huấn luyện.
         y_train (np.ndarray): Nhãn huấn luyện.
-        param_grid (Optional[Dict[str, List[Any]]]): Lưới tham số cần tìm kiếm C và gamma.
+        param_grid (Optional[Dict[str, List[Any]]]): Lưới tham số C và gamma.
         scoring (str): Chỉ số tối ưu. Mặc định 'f1_macro'.
         cv (int): Số nếp gấp Cross-validation. Mặc định 3.
-        n_jobs (int): Số luồng xử lý song song (-1 cho toàn bộ CPU).
+        n_jobs (int): Số luồng xử lý song song.
         class_weight (Optional[str]): Cân bằng trọng số lớp.
         probability (bool): Tính xác suất đầu ra.
         random_state (int): Seed ngẫu nhiên.
 
     Returns:
-        Tuple[SVC, StandardScaler, Dict[str, Any], float]: (Model tốt nhất, Scaler, Bộ tham số tốt nhất, Điểm F1 tốt nhất).
+        Tuple[SVC, StandardScaler, Dict[str, Any], float]: (Model tốt nhất, Scaler, Params, Điểm tốt nhất).
     """
     if param_grid is None:
         param_grid = {
@@ -131,8 +132,7 @@ def tune_svm(
 
     n_splits = max(2, min(int(cv), min_class))
 
-    # Đặt scaler bên trong Pipeline để mỗi fold chỉ học mean/std từ training fold.
-    # Fit scaler trước khi chia fold sẽ làm rò rỉ thống kê của validation fold.
+    # Đặt scaler bên trong Pipeline để tránh rò rỉ dữ liệu (data leakage) giữa các fold
     pipeline = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -148,6 +148,7 @@ def tune_svm(
             ),
         ]
     )
+
     pipeline_grid = {
         (key if key.startswith("svc__") else f"svc__{key}"): value
         for key, value in param_grid.items()
@@ -181,7 +182,7 @@ def evaluate_svm(clf: SVC, scaler: StandardScaler, X: np.ndarray, y: np.ndarray)
         y (np.ndarray): Nhãn thực tế.
 
     Returns:
-        Dict[str, Any]: Từ điển chứa các chỉ số Accuracy, Macro F1, Báo cáo phân loại và Confusion Matrix.
+        Dict[str, Any]: Từ điển chứa Accuracy, Macro F1, Báo cáo phân loại và Confusion Matrix.
     """
     X_scaled = scaler.transform(X)
     y_pred = clf.predict(X_scaled)
@@ -201,7 +202,7 @@ def analyze_confusion_and_per_class_f1(
     class_names: Optional[List[str]] = None,
     top_k: int = 10,
 ) -> Dict[str, Any]:
-    """Phân tích chuyên sâu ma trận nhầm lẫn và F1 từng lớp cho bài toán 52 lớp biển báo.
+    """Phân tích chuyên sâu ma trận nhầm lẫn và F1 từng lớp cho 52 lớp biển báo.
 
     Xác định các lớp có hiệu năng kém nhất (Worst K Classes) và các cặp lớp dễ nhầm lẫn
     nhất (Top Confusion Pairs, ví dụ: 50km/h vs 60km/h, Cấm dừng vs Cấm đỗ).
@@ -238,10 +239,8 @@ def analyze_confusion_and_per_class_f1(
             }
         )
 
-    # Tìm worst K classes theo F1
     worst_classes = sorted(per_class, key=lambda x: (x["f1_score"], -x["support"]))[:top_k]
 
-    # Phân tích top confusion pairs từ ma trận nhầm lẫn (bỏ đường chéo chính true == pred)
     cm = confusion_matrix(y_true, y_pred, labels=labels)
     confusion_pairs = []
     for i, true_lbl in enumerate(labels):
@@ -279,38 +278,13 @@ def analyze_confusion_and_per_class_f1(
     }
 
 
-def calibrate_classifier(
-    clf: SVC, scaler: StandardScaler, X_val: np.ndarray, y_val: np.ndarray, method: str = "sigmoid"
-) -> CalibratedClassifierCV:
-    """Hiệu chỉnh điểm tin cậy (Probability Calibration) trên tập Validation độc lập.
-
-    Giúp chuyển đổi khoảng cách siêu phẳng / raw probability thành xác suất thực sự calibrated.
-
-    Args:
-        clf (SVC): Mô hình SVM đã fit.
-        scaler (StandardScaler): Bộ chuẩn hóa tương ứng.
-        X_val (np.ndarray): Đặc trưng tập Validation.
-        y_val (np.ndarray): Nhãn tập Validation.
-        method (str): Phương pháp calibration ('sigmoid' hoặc 'isotonic'). Mặc định 'sigmoid'.
-
-    Returns:
-        CalibratedClassifierCV: Bộ phân loại đã calibrated trên tập validation.
-    """
-    X_val_scaled = scaler.transform(X_val)
-    calibrated_clf = CalibratedClassifierCV(estimator=clf, method=method, cv="prefit")
-    calibrated_clf.fit(X_val_scaled, y_val)
-    return calibrated_clf
-
-
 def predict_proba_safe(
-    clf: SVC, scaler: StandardScaler, X: np.ndarray
+    clf: Any, scaler: StandardScaler, X: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Dự đoán nhãn và điểm tin cậy (Confidence score / Probability) một cách an toàn.
-
-    Tự động hỗ trợ cả mô hình bật `probability=True` và mô hình dùng hàm khoảng cách `decision_function`.
+    """Dự đoán nhãn và điểm tin cậy (Confidence score / Probability).
 
     Args:
-        clf (SVC): Mô hình SVM.
+        clf (Any): Mô hình SVM.
         scaler (StandardScaler): Bộ chuẩn hóa.
         X (np.ndarray): Ma trận đặc trưng 2D.
 
@@ -329,12 +303,10 @@ def predict_proba_safe(
             labels = clf.classes_[idx]
             conf = proba[np.arange(len(idx)), idx]
             return labels, conf
-        except (AttributeError, ValueError):
-            # SVC không bật probability sẽ dùng decision_function bên dưới.
+        except Exception:
             pass
 
     labels = clf.predict(X_scaled)
-    # Dự phòng: Tính Sigmoid / Softmax từ khoảng cách siêu phẳng decision_function
     if hasattr(clf, "decision_function"):
         df = clf.decision_function(X_scaled)
         if df.ndim == 1:
@@ -348,7 +320,7 @@ def predict_proba_safe(
 
 
 def save_model(clf: SVC, scaler: StandardScaler, path: Union[str, Path]) -> None:
-    """Lưu mô hình SVM và Scaler vào tệp .joblib với nén dữ liệu.
+    """Lưu mô hình SVM và Scaler vào tệp .joblib.
 
     Args:
         clf (SVC): Mô hình đã fit.

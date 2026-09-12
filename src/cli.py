@@ -123,9 +123,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     class_names = _read_class_names(class_file) if class_file.is_file() else None
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    summary: List[Dict[str, Any]] = []
-    model_components = None if args.detect_only else load_pipeline_models(params)
+    try:
+        model_components = None if args.detect_only else load_pipeline_models(params)
+    except FileNotFoundError as err:
+        print(f"[LỖI] {err}", file=sys.stderr)
+        print(
+            "[GỢI Ý] Sử dụng cờ '--detect-only' để trích xuất vùng ứng viên mà không cần nạp mô hình SVM.",
+            file=sys.stderr,
+        )
+        return 1
 
+    summary: List[Dict[str, Any]] = []
     print(f"Chạy VietSign Vision trên {len(images)} ảnh...")
     for image_path in images:
         started_at = time.perf_counter()

@@ -430,7 +430,7 @@ def main():
     print(f"[SUCCESS] Phân chia dữ liệu Leakage-Safe hoàn tất tại '{out_path}':")
     print(f"  - Train: {summary['train']} ảnh ({len(train_c)} nhóm)")
     print(f"  - Val:   {summary['val']} ảnh ({len(val_c)} nhóm)")
-    print(f"  - Test:  {summary['test']} ảnh ({len(test_c)} nhóm - Khóa độc lập)")
+    print(f"  - Test:  {summary['test']} ảnh ({len(test_c)} nhóm - Độc lập)")
 
 
 if __name__ == "__main__":

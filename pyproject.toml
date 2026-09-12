@@ -23,7 +23,6 @@ classifiers = [
 
 [project.scripts]
 vietsign = "src.cli:main"
-vietsign-audit = "src.audit:main"
 
 [project.optional-dependencies]
 notebooks = [

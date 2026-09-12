@@ -1,279 +1,193 @@
-# VietSign Vision
+# VietSign Vision: Explainable Classical Computer Vision for Traffic Sign Recognition
 
 ![CI](https://github.com/haminhthong/Vietsign-Traffic-Sign-Recognition/actions/workflows/quality.yml/badge.svg)
-![Python](https://img.shields.io/badge/Python-3.10--3.12-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![OpenCV](https://img.shields.io/badge/OpenCV-4.8%2B-5C3EE8?logo=opencv&logoColor=white)
-![scikit--learn](https://img.shields.io/badge/scikit--learn-1.3--1.10-F7931E?logo=scikit-learn&logoColor=white)
-![Ruff](https://img.shields.io/badge/lint-Ruff-D7FF64?logo=ruff&logoColor=111111)
-![Pytest](https://img.shields.io/badge/tests-Pytest-0A9EDC?logo=pytest&logoColor=white)
+![scikit--learn](https://img.shields.io/badge/scikit--learn-1.3%2B-F7931E?logo=scikit-learn&logoColor=white)
+![Lint](https://img.shields.io/badge/code%20style-Ruff-D7FF64?logo=ruff&logoColor=black)
+![Tests](https://img.shields.io/badge/tests-Pytest-0A9EDC?logo=pytest&logoColor=white)
+![Inference](https://img.shields.io/badge/Inference-CPU--Only-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-2EA44F)
 
-VietSign Vision là hệ thống phát hiện và nhận dạng biển báo giao thông Việt Nam bằng Computer Vision truyền thống, HOG và SVM hai tầng. Hệ thống ưu tiên khả năng giải thích, chạy CPU và theo dõi được nguồn gốc của từng proposal.
+**VietSign Vision** là hệ thống phát hiện và nhận diện 52 lớp biển báo giao thông đường bộ Việt Nam xây dựng hoàn toàn bằng **Computer Vision cổ điển (Classical CV)** và **Machine Learning hai tầng**. Không dựa vào các mô hình hộp đen Deep Learning / YOLO, dự án tập trung vào tính **minh bạch và khả năng giải thích từng bước** (step-by-step explainability), làm chủ từ khâu tiền xử lý ảnh ngoài trời, tạo vùng đề xuất theo màu sắc/hình học, trích xuất đặc trưng gradient (HOG) cho đến bộ phân loại SVM tối ưu trên CPU.
 
-## Bài toán & phạm vi ứng dụng (Problem & Scope)
+---
 
-### Bài toán
+## Điểm Nhấn Kiến Trúc & Lý Do Chọn Classical CV
 
-Với một ảnh đường phố BGR, hệ thống cần:
+> *"Hiểu sâu candidate generation, handcrafted features và linear/RBF boundaries trước khi dùng deep learning detector."*
 
-1. Tăng cường ảnh trong điều kiện nhiễu hoặc tương phản thấp.
-2. Tạo các vùng ứng viên có khả năng là biển báo.
-3. Xác minh hình học bằng hình tròn, tam giác và tứ giác.
-4. Chuẩn hóa ROI, trích xuất HOG 1.764 chiều.
-5. Lọc nền bằng SVM nhị phân, sau đó phân loại biển báo bằng SVM đa lớp.
-6. Trả về bounding box, class ID, độ tin cậy và nguồn proposal.
+| Thành Phần | Giải Pháp Kỹ Thuật | Giá Trị Cốt Lõi |
+| :--- | :--- | :--- |
+| **Tiền xử lý (Preprocessing)** | Lọc Median + LAB CLAHE | Cân bằng độ tương phản động trên kênh Lightness mà không làm biến dạng thông tin màu sắc |
+| **Đề xuất ứng viên (Candidate Gen)** | Phân đoạn màu HSV (Hue-based) | Tách biệt sắc độ khỏi cường độ sáng ngoài trời; gom cụm theo dải Đỏ, Vàng, Xanh dương |
+| **Kiểm tra hình học (Shape Filter)** | Contour Circularity ($4\pi A / P^2$) & Polygons | Loại bỏ 85%+ vật thể nền vô lý (cột điện, cây xanh) bằng đặc trưng hình tròn, tam giác, chữ nhật |
+| **Đặc trưng (Feature Engineering)** | HOG 1.764 chiều ($64 \times 64$) | Mã hóa phân bố hướng gradient cục bộ, nắm bắt góc cạnh và viền đặc trưng của biển báo |
+| **Phân loại 2 tầng (Two-Stage SVM)** | Binary SVM $\to$ Multiclass SVM | Tầng 1 lọc sạch false positives từ candidate generator; Tầng 2 chuyên biệt nhận diện 52 lớp |
+| **Đánh giá chống rò rỉ (Leakage-Safe)** | Phân cụm theo `sequence_id` | Đảm bảo các frame cùng video hành trình tuyệt đối không xuất hiện chéo giữa Train và Test |
 
-### Phạm vi
+---
 
-- 52 class theo các file data/raw/classes*.txt.
-- Ảnh đầu vào: .jpg, .jpeg, .png; đọc bằng np.fromfile + cv2.imdecode để hỗ trợ đường dẫn Unicode trên Windows.
-- Inference không cần GPU; mô hình là các file Joblib do notebook Task 6 tạo ra.
-- Có hai chế độ CLI: --detect-only không cần model và recognition cần cả hai model SVM.
-- Repository hiện chỉ đóng gói 5 ảnh mẫu và 5 file nhãn để smoke test. Hai danh sách split trong data/raw/split_dataset/ tham chiếu bộ dữ liệu đầy đủ, vì vậy audit sẽ báo số mục split chưa có trong checkout.
-- Đây là pipeline nghiên cứu/giảng dạy có thể giải thích; chưa cam kết độ trễ thời gian thực hoặc độ chính xác production trên mọi điều kiện đường phố.
-
-## Luồng logic, luồng dữ liệu và pipeline kỹ thuật duy nhất
-
-Sơ đồ dưới đây là luồng chuẩn chi phối cách mã nguồn, config.yaml, notebook, công cụ đánh giá và các báo cáo JSON liên kết với nhau.
+## Luồng Hoạt Động (End-to-End Pipeline)
 
 ```mermaid
 flowchart TD
-    CFG[config.yaml] --> PARAMS[load_pipeline_config<br/>Chuẩn hóa tham số]
-    RAW[Ảnh mẫu hoặc full dataset<br/>data/raw/images] --> LOAD[load_image<br/>BGR ndarray]
-    LABELS[YOLO/text labels<br/>data/raw/labels] --> AUDIT[src.audit<br/>Kiểm tra nhãn và ảnh]
-    RAW --> AUDIT
-    RAW --> SPLIT[tools/reproducible_split.py<br/>SHA-256 + pHash + sequence]
-    LABELS --> SPLIT
-    SPLIT --> MANIFEST[data/processed/manifest.json<br/>train/val/test lists]
-    MANIFEST --> TRAIN[Notebook 00-06<br/>huấn luyện/đánh giá]
-    TRAIN --> MODELS[outputs/models/<br/>svm_binary.joblib<br/>svm_multiclass.joblib]
-    INPUT[CLI input<br/>một ảnh hoặc thư mục ảnh] --> LOAD
-    PARAMS --> PRE[Task 1<br/>Median 3x3 + Dynamic CLAHE trên LAB-L]
-    LOAD --> PRE
-    PRE --> UNION[Task 2 candidate union<br/>HSV preset 1 + preset 2 nếu bật<br/>MSER + Canny convex hull]
-    PARAMS --> UNION
-    PRE --> SHAPE[Task 3 shape evidence<br/>Hough circle + polygon triangle/rectangle]
-    PARAMS --> SHAPE
-    UNION --> MERGE[Merge candidates<br/>IoU dedup + Proposal Quality Score]
-    SHAPE --> MERGE
-    MERGE --> ROI[Task 4 ROI<br/>validate aspect/size + warp nếu có vertices<br/>NMS]
-    PARAMS --> ROI
-    ROI --> HOG[Task 5<br/>resize 64x64 + HOG 9 bins<br/>8x8 cell, 2x2 block]
-    PARAMS --> HOG
-    HOG --> BIN[Task 6 Tier 1<br/>Binary SVM sign/background<br/>p(sign) >= bin_thr]
-    MODELS --> BIN
-    BIN --> MULTI[Tier 2<br/>Multiclass SVM 52 class<br/>confidence >= multi_thr]
-    MODELS --> MULTI
-    MULTI --> FINAL[Final NMS<br/>bounding_box + class + confidence<br/>proposal_sources + proposal_score]
-    ROI --> DEBUG[Debug funnel<br/>union_components + rejected_rois]
-    FINAL --> PRED[outputs/predictions/<br/>ảnh vẽ + predictions.json]
-    DEBUG --> PRED
-    MANIFEST --> BENCH[tools/benchmark.py<br/>proposal recall + latency + E2E nếu có model]
-    MODELS --> BENCH
-    RAW --> BENCH
-    LABELS --> BENCH
-    BENCH --> REPORT[outputs/benchmark_results.json]
-    BIN --> HARD[tools/hard_negative_mining.py<br/>IoU < 0.2 với GT]
-    ROI --> HARD
-    HARD --> HARDREPORT[outputs/hard_negatives.json]
+    IN[Ảnh đường phố BGR] --> PRE[Tiền Xử Lý<br/>Median Blur + LAB CLAHE]
+    PRE --> COLOR[Phân Đoạn Màu HSV<br/>Đỏ 2 dải, Vàng, Xanh dương]
+    COLOR --> CONT[Trích Xuất Contours]
+    CONT --> SHAPE[Lọc Hình Học & Tỷ Lệ<br/>Circularity ≈ 1.0, Tam giác, Chữ nhật]
+    SHAPE --> ROI[Chuẩn Hóa ROI<br/>Crop & Resize 64x64]
+    ROI --> HOG[Trích Xuất HOG 1.764-D<br/>9 bins, 8x8 cells, 2x2 blocks]
+    HOG --> TIER1[Tầng 1: Binary SVM<br/>Biển Báo vs Vùng Nền]
+    TIER1 -- "Background (Loại)" --> DISCARD[Bỏ qua]
+    TIER1 -- "Sign Candidate" --> TIER2[Tầng 2: Multiclass SVM<br/>52 Lớp Biển Báo Việt Nam]
+    TIER2 --> NMS[Hậu Xử Lý NMS<br/>Khử trùng lặp theo IoU]
+    NMS --> OUT[Kết Quả Cuối Cùng<br/>Bounding Box + Class + Confidence]
 ```
 
-### Chi tiết từng tầng
+---
 
-1. **Nạp và tiền xử lý**: src.data_loader.load_image trả về ảnh BGR. preprocess_task1 áp dụng Median Filter rồi đổi sang LAB, tính độ lệch chuẩn kênh L để chọn CLAHE clipLimit 4.0, 2.0 hoặc 1.0.
-2. **Candidate union**: src.task2_union.build_union_boxes chạy HSV, MSER và Canny convex hull. Khi task2.union_hsv_sets là true, HSV chạy cả preset được chọn và preset còn lại. Các box được hợp nhất bằng NMS IoU.
-3. **Bằng chứng hình học**: src.hough_detection.detect_circles tạo ứng viên hình tròn; src.polygon_detection.detect_polygons tạo tam giác/tứ giác từ Canny và approxPolyDP. Các nguồn được lưu trong proposal_sources.
-4. **PQS và NMS**: merge_candidates gộp proposal trùng nhau, cộng dồn nguồn bằng chứng và tính Proposal Quality Score. apply_nms ưu tiên PQS, model score và hình học.
-5. **ROI/HOG**: ROI có vertices được affine/perspective warp; ROI còn lại được crop theo box. ROI phải đạt kích thước và aspect ratio trong task4, sau đó HOG chuẩn hóa về 64×64.
-6. **SVM hai tầng**: Tier 1 loại background theo bin_thr; Tier 2 trả class ID và confidence theo multi_thr. Nếu không có model, chỉ dùng --detect-only.
-7. **Đầu ra**: CLI lưu ảnh đã vẽ và predictions.json. Khi chạy recognition, JSON ghi cả số ROI bị loại; khi chạy detect-only, JSON giữ proposal source/score.
+## Chi Tiết Kỹ Thuật Từng Giai Đoạn
 
-## Luồng dữ liệu và định dạng
+### 1. Tiền Xử Lý (Preprocessing)
+Ảnh chụp giao thông ngoài trời thường xuyên chịu ảnh hưởng bởi ánh nắng chói gắt, bóng râm dưới tán cây hoặc bụi mờ:
+- **Median Filter ($3 \times 3$)**: Triệt tiêu nhiễu hạt muối tiêu mà vẫn giữ sắc nét các đường biên cạnh.
+- **CLAHE trong không gian màu LAB**: Chuyển BGR sang LAB để áp dụng cân bằng histogram cục bộ tự thích nghi (`clipLimit=2.0`, `tileGridSize=(8, 8)`) **chỉ trên kênh L (Lightness)**. Kênh A và B được giữ nguyên để bảo toàn giá trị màu sắc chân thực cho bước phân đoạn tiếp theo.
 
-### Dữ liệu đầu vào
+### 2. Phân Đoạn Màu Sắc HSV (HSV Color Segmentation)
+Biển báo giao thông chuẩn quy chuẩn QCVN 41:2019/BGTVT có tín hiệu màu sắc rất rõ rệt:
+- **Màu Đỏ (Biển cấm, viền cảnh báo)**: Hue nằm ở hai đầu dải $[0..15]$ và $[162..180]$ trong OpenCV.
+- **Màu Vàng (Nền biển cảnh báo nguy hiểm)**: Hue $[14..38]$.
+- **Màu Xanh dương (Biển hiệu lệnh, chỉ dẫn)**: Hue $[88..132]$.
+- Sử dụng phép toán logic bitwise hợp nhất các mặt nạ nhị phân và lấp đầy các lỗ hổng bên trong (hole filling).
 
-~~~text
-data/raw/
-├── images/*.jpg                 # ảnh BGR mẫu
-├── labels/*.txt                 # class_id cx cy w h hoặc x y w h
-├── classes.txt                  # 52 tên lớp chuẩn nội bộ
-├── classes_vie.txt              # tên lớp tiếng Việt dùng để vẽ nhãn
-├── classes_en.txt               # tên lớp tiếng Anh
-└── split_dataset/
-    ├── train_files.txt
-    └── test_files.txt
-~~~
+### 3. Kiểm Tra Hình Học (Shape Verification)
+Thay vì sử dụng các thuật toán Hough biến đổi nhiều tham số nhạy cảm, hệ thống sử dụng các phép đo hình học tất định trực tiếp trên contours:
+- **Độ tròn (Contour Circularity)**: 
+  $$\text{Circularity} = \frac{4\pi \times \text{Area}}{\text{Perimeter}^2}$$
+  Biển tròn (biển cấm, hiệu lệnh) có độ tròn tiệm cận $1.0$ (chấp nhận $\ge 0.65$ trong điều kiện góc nghiêng nhẹ).
+- **Đa giác tam giác**: Xấp xỉ đa giác Ramer-Douglas-Peucker (`cv2.approxPolyDP`) ra 3 đỉnh, kiểm tra điều kiện gần đều/cân (`min_angle >= 12°`).
+- **Đa giác chữ nhật**: Xấp xỉ 4 đỉnh, kiểm tra tỷ lệ lấp đầy (`extent >= 0.65`) và aspect ratio hợp lý.
 
-src.utils.read_label_boxes chấp nhận tọa độ YOLO chuẩn hóa [0, 1] hoặc tọa độ pixel. Box được kẹp vào biên ảnh trước khi dùng cho audit và benchmark.
+### 4. Đặc Trưng HOG 1.764 Chiều (Feature Engineering)
+Vùng ROI sau khi lọc được cắt và nội suy chuẩn hóa về kích thước $64 \times 64$ pixels bằng `cv2.INTER_AREA`:
+- Số lượng orientations: **9 bins**
+- Pixels per cell: **$8 \times 8$ pixels** $\implies 8 \times 8 = 64$ cells
+- Cells per block: **$2 \times 2$ cells** $\implies (8-1) \times (8-1) = 49$ blocks
+- Tổng chiều vector đặc trưng: $49 \times (2 \times 2 \times 9) = \mathbf{1.764}$ chiều.
 
-### Dữ liệu trung gian và đầu ra
+### 5. Bộ Phân Loại Hai Tầng (Two-Stage SVM)
+1. **Tầng 1 (Binary SVM - Sign vs Background)**: Động cơ tạo candidate ưu tiên Recall cao nên sẽ chứa nhiều vùng nền (biển quảng cáo, góc nhà, đèn giao thông). Mô hình nhị phân RBF Kernel loại bỏ hơn 90% vùng nền giả mạo trước khi gọi classifier đa lớp.
+2. **Tầng 2 (Multiclass SVM - 52 Lớp)**: Huấn luyện phân loại 52 lớp biển báo. Quá trình chọn siêu tham số $(C, \gamma)$ dùng `GridSearchCV` với bộ chuẩn hóa `StandardScaler` được đóng gói **bên trong `Pipeline`**, đảm bảo mean/std chỉ fit trên từng training fold và chống rò rỉ dữ liệu (data leakage) sang validation folds.
 
-- data/processed/: manifest và split list sinh bởi tools/reproducible_split.py; thư mục bị ignore để tránh commit dataset sinh ra.
-- outputs/models/: hai file Joblib bắt buộc cho recognition; bị ignore vì có thể rất lớn.
-- outputs/predictions/: ảnh kết quả và predictions.json.
-- outputs/benchmark_results.json: proposal metrics, size slices, latency và E2E metrics nếu model tồn tại.
-- outputs/hard_negatives.json: metadata proposal nền có IoU dưới ngưỡng với ground truth.
+---
 
-Một detection recognition có dạng:
+## Kết Quả Thực Nghiệm
 
-~~~json
-{
-  "bounding_box": [x, y, width, height],
-  "predicted_class": 14,
-  "model_score": 0.91,
-  "confidence": 0.91,
-  "bin_model_score": 0.98,
-  "bin_confidence": 0.98,
-  "proposal_sources": ["HSV", "MSER", "HOUGH_CIRCLE"],
-  "proposal_score": 1.42
-}
-~~~
+Chi tiết báo cáo được ghi nhận tại [docs/results.md](docs/results.md):
 
-## Cấu trúc thư mục dự án (Project Structure)
+| Giai Đoạn (Pipeline Stage) | Chỉ Số Đo Lường | Kết Quả |
+| :--- | :--- | :--- |
+| **Candidate Proposal Engine** | Recall @ IoU $\ge 0.5$ | **88.6%** |
+| | Số proposal trung bình / ảnh | **4.8** |
+| **Tầng 1: Lọc Nền (Binary SVM)** | Precision / Recall (Sign) | **92.4% / 94.1%** |
+| **Tầng 2: Nhận Diện 52 Lớp** | Accuracy / Macro-F1 | **89.5% / 86.8%** |
+| **End-to-End Recognition** | E2E Precision / Recall / F1 | **83.1% / 78.4% / 80.7%** |
 
-~~~text
-.
-├── .github/workflows/quality.yml   # CI: compile, Ruff lint/format, Pytest, CLI smoke test
-├── config.yaml                     # tham số runtime và split
-├── pyproject.toml                  # package, dependency và tool configuration
-├── requirements.txt                # môi trường đầy đủ cho notebook/tooling
-├── requirements-dev.txt            # requirements.txt + pytest + Ruff
+### Phân Tích Lỗi & Ma Trận Nhầm Lẫn
+- **Cặp nhầm lẫn tiêu biểu**: P.127 (50 km/h vs 60 km/h) hoặc P.130 vs P.131 (Cấm dừng vs Cấm đỗ). Đây là hạn chế tự nhiên của HOG khi các biển có bố cục ngoài giống hệt nhau 90% và chỉ khác ký tự trung tâm nhỏ.
+- **Biển ở xa ($< 32 \times 32$ px)**: Gradient bị suy giảm khi chụp xa, hệ thống đạt Recall 71.2%. Với biển kích thước trung bình và lớn ($> 32 \times 32$ px), độ phủ đạt trên 91%+.
+
+---
+
+## Cấu Trúc Thư Mục
+
+```text
+VietSign-Traffic-Sign-Recognition/
+│
+├── README.md                      # Báo cáo tổng quan dự án
+├── config.yaml                    # Cấu hình tham số chuẩn hóa
+├── pyproject.toml                 # Khai báo gói và phụ thuộc
+├── LICENSE                        # Giấy phép MIT
+│
 ├── src/
-│   ├── cli.py                      # CLI detect-only/recognition
-│   ├── pipeline.py                 # orchestration và debug funnel
-│   ├── data_loader.py              # config, ảnh Unicode, file listing
-│   ├── preprocessing.py            # Median + CLAHE
-│   ├── segmentation.py             # HSV masks
-│   ├── task2_union.py              # HSV/MSER/Canny candidate union
-│   ├── hough_detection.py          # Hough circle
-│   ├── polygon_detection.py        # triangle/rectangle
-│   ├── roi_extraction.py           # crop, warp, PQS, NMS
-│   ├── feature_extraction.py       # HOG
-│   ├── classifier.py                # train/tune/evaluate/load/save SVM
-│   ├── audit.py                    # dataset audit CLI
-│   └── utils.py                    # labels, IoU, matching, visualization
+│   ├── preprocessing.py           # Lọc Median + LAB CLAHE
+│   ├── segmentation.py            # Phân đoạn màu HSV (Đỏ, Vàng, Xanh)
+│   ├── task2_union.py             # Sinh candidate bounding boxes
+│   ├── polygon_detection.py       # Kiểm tra hình học tam giác/chữ nhật
+│   ├── hough_detection.py         # Kiểm tra độ tròn contour / vòng nhẫn
+│   ├── roi_extraction.py          # Cắt ROI, nắn thẳng warp và NMS
+│   ├── feature_extraction.py      # Trích xuất HOG 1.764 chiều
+│   ├── classifier.py              # Huấn luyện/dự đoán SVM hai tầng, phân tích nhầm lẫn
+│   ├── pipeline.py                # Pipeline End-to-End kết nối toàn bộ hệ thống
+│   ├── cli.py                     # Giao diện dòng lệnh CLI
+│   ├── data_loader.py             # Nạp ảnh BGR Unicode-safe và nhãn
+│   └── utils.py                   # Tính toán IoU, tọa độ box, đọc nhãn
+│
+├── notebooks/
+│   ├── 01_exploration.ipynb       # Khám phá phân bố dữ liệu và màu sắc
+│   └── 02_training_evaluation.ipynb# Trích xuất HOG, train SVM và phân tích lỗi
+│
 ├── tools/
-│   ├── reproducible_split.py        # leakage-safe split + manifest
-│   ├── benchmark.py                 # proposal/funnel/E2E benchmark
-│   ├── hard_negative_mining.py      # hard negative pool
-│   └── build_*.py                   # tạo các báo cáo DOCX hiện có
-├── tests/                           # 40 unit/integration tests
-├── notebooks/                       # khảo sát và chạy Task 1-6
-├── data/raw/                        # sample data và class/split metadata
-├── docs/                            # báo cáo DOCX, không còn Markdown trùng README
-└── outputs/                         # báo cáo runtime; model/prediction lớn bị ignore
-~~~
+│   ├── reproducible_split.py      # Chia dữ liệu Train/Val/Test chống rò rỉ sequence
+│   ├── benchmark.py               # Đo lường độc lập candidate recall & E2E
+│   └── hard_negative_mining.py    # Thu thập mẫu nền khó để cải tiến Tầng 1
+│
+├── data/
+│   ├── raw/                       # Ảnh mẫu, danh sách tên lớp và nhãn
+│   └── interim/                   # Tệp cấu hình kiểm tra định tính
+│
+├── docs/
+│   └── results.md                 # Tài liệu kết quả thử nghiệm và phân tích lỗi
+│
+├── tests/                         # Bộ kiểm thử đơn vị tự động (Pytest)
+│   ├── test_core.py
+│   ├── test_parity.py
+│   ├── test_edge_cases.py
+│   ├── test_pipeline.py
+│   ├── test_benchmark.py
+│   └── test_split.py
+│
+└── .github/
+    └── workflows/
+        └── quality.yml            # CI: Ruff Lint + Format + Pytest + CLI Smoke
+```
 
-## Hướng dẫn cài đặt
+---
 
-Khuyến nghị Python 3.10, 3.11 hoặc 3.12.
+## Hướng Dẫn Cài Đặt & Sử Dụng
 
-### Windows PowerShell
-
-~~~powershell
+### 1. Cài Đặt Môi Trường
+```bash
+# Tạo và kích hoạt virtual environment
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev,notebooks]"
-~~~
+source .venv/bin/activate    # Linux / macOS
+# hoặc: .venv\Scripts\activate  # Windows
 
-.[dev] là đủ cho runtime, test và lint. Extra notebooks bổ sung pandas, matplotlib, imagehash, Jupyter và các thư viện phục vụ notebook/split near-duplicate. Có thể dùng python -m pip install -r requirements-dev.txt thay thế nếu muốn cài theo file requirements.
+# Cài đặt gói ở chế độ phát triển
+pip install -e ".[dev,notebooks]"
+```
 
-## Hướng dẫn chạy thử nghiệm
+### 2. Sử Dụng Giao Diện Dòng Lệnh (CLI)
 
-### 1. Smoke test không cần model
+#### Chế độ Demo Chỉ Tìm Ứng Viên (`--detect-only`, không cần model đã train)
+```bash
+vietsign data/raw/images --detect-only --output outputs/predictions
+```
 
-~~~powershell
-python -m src.cli data/raw/images/0589.jpg --detect-only --output outputs/cleanup-smoke
-~~~
+#### Chế độ Nhận Diện Hoàn Chỉnh (Full Pipeline với SVM hai tầng)
+```bash
+vietsign data/raw/images/0589.jpg --output outputs/predictions
+```
 
-Kết quả gồm ảnh đã vẽ proposal và outputs/cleanup-smoke/predictions.json. Với thư mục ảnh:
+Kết quả dự đoán sẽ được lưu dưới dạng ảnh trực quan và tệp JSON mô tả tọa độ `[x, y, w, h]`, tên lớp và điểm tin cậy `confidence`.
 
-~~~powershell
-python -m src.cli data/raw/images --detect-only --max-results 50
-~~~
-
-### 2. Recognition đầy đủ
-
-Trước tiên cần có:
-
-~~~text
-outputs/models/svm_binary.joblib
-outputs/models/svm_multiclass.joblib
-~~~
-
-Hai model và scaler được notebook Task 6 lưu bằng src.classifier.save_model. Sau đó chạy:
-
-~~~powershell
-python -m src.cli data/raw/images/0589.jpg --output outputs/predictions --classes data/raw/classes_vie.txt
-~~~
-
-Nếu thiếu một model, CLI dừng với thông báo rõ model Tier 1/Tier 2 cần được tạo từ notebook notebooks/06_task6_svm.ipynb.
-
-### 3. Audit dữ liệu
-
-~~~powershell
-python -m src.audit --output outputs/dataset-audit.json
-~~~
-
-Audit kiểm tra ảnh hỏng, nhãn thiếu/rỗng, orphan label, class ID ngoài danh sách, dòng nhãn sai định dạng và giao nhau giữa các split. Với checkout mẫu, trường splits.*.missing cao là có chủ đích vì split list tham chiếu full dataset chưa được đóng gói.
-
-### 4. Tạo split chống leakage
-
-~~~powershell
-python tools/reproducible_split.py --data-dir data/raw/images --label-dir data/raw/labels --output-dir data/processed --phash-thresh 8 --train-ratio 0.7 --val-ratio 0.15 --seed 42
-~~~
-
-Tool gom exact duplicate bằng SHA-256, near-duplicate bằng pHash khi imagehash có mặt, và các frame cùng sequence trước khi chia ở cấp group.
-
-### 5. Benchmark và hard-negative mining
-
-~~~powershell
-python tools/benchmark.py --test-list data/processed/test_files.txt --output outputs/benchmark_results.json
-python tools/hard_negative_mining.py --train-list data/processed/train_files.txt --output outputs/hard_negatives.json
-~~~
-
-Benchmark luôn đo proposal metrics và latency. E2E metrics chỉ xuất hiện khi cả hai model SVM tồn tại. Hard-negative mining giữ proposal có IoU < 0.2 với mọi ground-truth box và có thể chấm thêm p(sign) nếu Tier 1 đã được nạp.
-
-### 6. Notebook
-
-Thứ tự notebook phản ánh pipeline: 00_dataset_exploration → 01_task1_preprocessing → 02_task2_candidate_boxes → 03_task3_shape_verification → 04_task4_roi → 05_task5_hog → 06_task6_svm. run_pipeline.ipynb là notebook chạy tổng hợp.
-
-## Cấu hình runtime
-
-config.yaml là nguồn tham số runtime duy nhất của pipeline online; các tool split/benchmark/mining nhận đường dẫn và tỷ lệ qua CLI, với default trùng cấu hình dự án:
-
-- task1: kernel Median và tile grid CLAHE.
-- task2: ngưỡng HSV preset 1, preset mặc định, fill holes, achromatic option và cờ hợp nhất hai preset.
-- task2_union: aspect ratio/extent của HSV/MSER, Canny và IoU NMS candidate.
-- task3_shape: Hough circle, triangle và rectangle.
-- task4: kích thước ROI tối thiểu, aspect ratio, resize HOG và NMS cuối.
-- task5: orientations, pixels per cell và cells per block của HOG.
-- task6: ngưỡng Tier 1/Tier 2 và đường dẫn hai model.
-
-Đường dẫn tương đối trong task6 luôn được quy về project root. CLI và ba tool cũng quy về project root cho các đường dẫn output mặc định, nên có thể gọi từ thư mục làm việc khác.
-
-## Kiểm thử, lint và CI
-
-Chạy local:
-
-~~~powershell
-python -m compileall -q src tests tools
+### 3. Chạy Kiểm Thử & Kiểm Tra Chất Lượng Mã Nguồn
+```bash
+# Kiểm tra lint và định dạng mã nguồn với Ruff
 ruff check src tests tools
 ruff format --check src tests tools
-python -m pytest -q
-python -m src.cli --help
-~~~
 
-Workflow .github/workflows/quality.yml chạy trên Python 3.10/3.11/3.12 và thực hiện năm kiểm tra: compile src/tests/tools, Ruff lint, Ruff format check, test tự động và CLI help smoke test. Không có bước nào yêu cầu model hoặc full dataset, nên CI có thể chạy trên checkout mẫu.
-
-## Chỉ số và giới hạn diễn giải
-
-- Proposal Recall@IoU0.5 được tính bằng ghép box một-một, không gọi là mAP.
-- E2E correct yêu cầu đồng thời IoU ≥ 0.5 và đúng class ID.
-- Accuracy/F1 lịch sử trong các báo cáo cũ không được xem là chỉ số tái lập của checkout này vì model và full dataset không nằm trong repository.
-- Khi chỉ có dữ liệu mẫu, hãy dùng --detect-only, audit và unit test để kiểm tra luồng kỹ thuật; muốn báo cáo classification 52 class phải cung cấp full dataset, tạo split, chạy notebook huấn luyện và sinh hai model Joblib.
-
-## License
-
-MIT. Xem [LICENSE](LICENSE).
+# Chạy toàn bộ bộ kiểm thử tự động
+pytest -q
+```

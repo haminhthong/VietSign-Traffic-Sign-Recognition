@@ -1,8 +1,8 @@
-"""Module Trích Xuất Vùng Quan Tâm (Task 4: ROI Extraction & NMS Filtering).
+"""Module Trích Xuất Vùng Quan Tâm (ROI Extraction & NMS Filtering).
 
-Thực hiện cắt (crop), biến đổi góc nhìn/xoay (Warp Perspective / Affine Transform cho đa giác),
+Thực hiện cắt (crop), nắn thẳng góc nhìn (Perspective/Affine Transform khi có đỉnh đa giác),
 chuẩn hóa kích thước ROI ($64 \\times 64$), kiểm tra tỷ lệ khung hình (Aspect Ratio),
-và áp dụng thuật toán NMS (Non-Maximum Suppression) nâng cao để lọc các vùng ứng viên.
+và áp dụng thuật toán NMS (Non-Maximum Suppression) để loại bỏ các vùng ứng viên trùng lặp.
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -39,7 +39,7 @@ def crop_roi(image_bgr: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarra
 
 
 def _order_triangle_pts(pts: np.ndarray) -> np.ndarray:
-    """Sắp xếp các đỉnh tam giác bắt đầu từ đỉnh trên cùng (Top vertex)."""
+    """Sắp xếp các đỉnh tam giác bắt đầu từ đỉnh trên cùng."""
     top_idx = int(np.argmin(pts[:, 1]))
     return np.roll(pts, -top_idx, axis=0)
 
@@ -58,14 +58,14 @@ def _order_rect_pts(pts: np.ndarray) -> np.ndarray:
 def crop_roi_warped(
     image_bgr: np.ndarray, vertices: List[List[float]], size: Tuple[int, int]
 ) -> Optional[np.ndarray]:
-    """Cắt và nắn thẳng góc nhìn (Warp Transform) dựa trên các đỉnh tam giác/tứ giác thực tế.
+    """Cắt và nắn thẳng góc nhìn (Warp Transform) dựa trên các đỉnh tam giác/tứ giác.
 
-    Giúp chuẩn hóa hình ảnh biển báo bị nghiêng hoặc biến dạng góc nhìn trước khi trích xuất HOG.
+    Chuẩn hóa hình ảnh biển báo bị nghiêng góc nhìn trước khi trích xuất HOG.
 
     Args:
         image_bgr (np.ndarray): Ảnh BGR gốc.
         vertices (List[List[float]]): Danh sách các đỉnh (3 cho tam giác, 4 cho tứ giác).
-        size (Tuple[int, int]): Kích thước chiều rộng và chiều cao mong muốn (w, h).
+        size (Tuple[int, int]): Kích thước (w, h) mong muốn.
 
     Returns:
         Optional[np.ndarray]: Vùng ảnh đã biến đổi nắn thẳng (hoặc None nếu lỗi).
@@ -84,7 +84,8 @@ def crop_roi_warped(
         else:
             pts_ordered = _order_rect_pts(pts)
             dst = np.array(
-                [[0.0, 0.0], [w - 1.0, 0.0], [w - 1.0, h - 1.0], [0.0, h - 1.0]], dtype=np.float32
+                [[0.0, 0.0], [w - 1.0, 0.0], [w - 1.0, h - 1.0], [0.0, h - 1.0]],
+                dtype=np.float32,
             )
             matrix = cv2.getPerspectiveTransform(pts_ordered, dst)
             return cv2.warpPerspective(image_bgr, matrix, (w, h))
@@ -111,7 +112,7 @@ def is_valid_roi(
         max_aspect_ratio (float): Aspect ratio tối đa (w/h). Mặc định 3.0.
 
     Returns:
-        Tuple[bool, str]: (Hợp lệ hay không, Lý do từ chối nếu không hợp lệ).
+        Tuple[bool, str]: (Hợp lệ hay không, Lý do nếu không hợp lệ).
     """
     if w <= 0 or h <= 0:
         return False, "kích thước không hợp lệ (<= 0)"
@@ -126,16 +127,7 @@ def is_valid_roi(
 def resize_roi(
     crop: np.ndarray, size: Tuple[int, int] = (64, 64), interpolation: int = cv2.INTER_AREA
 ) -> np.ndarray:
-    """Thay đổi kích thước ROI về chuẩn $64 \\times 64$ pixels trước khi trích xuất HOG.
-
-    Args:
-        crop (np.ndarray): Ảnh crop BGR.
-        size (Tuple[int, int]): Kích thước mới. Mặc định (64, 64).
-        interpolation (int): Phương pháp nội suy OpenCV. Mặc định cv2.INTER_AREA cho thu nhỏ.
-
-    Returns:
-        np.ndarray: Ảnh đã resize $64 \\times 64$.
-    """
+    """Thay đổi kích thước ROI về chuẩn $64 \\times 64$ pixels trước khi trích xuất HOG."""
     if crop is None or crop.size == 0:
         raise ValueError("Crop rỗng không thể resize")
     return cv2.resize(crop, size, interpolation=interpolation)
@@ -153,14 +145,14 @@ def extract_rois(
 
     Args:
         image_bgr (np.ndarray): Ảnh BGR gốc.
-        contour_items (List[Dict[str, Any]]): Danh sách từ điển các vùng ứng viên.
+        contour_items (List[Dict[str, Any]]): Danh sách các vùng ứng viên.
         min_w (int): Chiều rộng tối thiểu.
         min_h (int): Chiều cao tối thiểu.
         min_aspect_ratio (float): Aspect ratio tối thiểu.
         max_aspect_ratio (float): Aspect ratio tối đa.
 
     Returns:
-        Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]: (Danh sách ROI hợp lệ có kèm key 'crop', Danh sách bị loại).
+        Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]: (ROI hợp lệ có key 'crop', ROI bị loại).
     """
     valid_rois: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
@@ -195,17 +187,7 @@ def draw_rois(
     color: Tuple[int, int, int] = (0, 255, 0),
     thickness: int = 2,
 ) -> np.ndarray:
-    """Vẽ bounding box của các ROI lên ảnh BGR.
-
-    Args:
-        image_bgr (np.ndarray): Ảnh BGR gốc.
-        rois (List[Dict[str, Any]]): Danh sách các ROI.
-        color (Tuple[int, int, int]): Màu khung (BGR). Mặc định xanh lá.
-        thickness (int): Độ dày nét vẽ.
-
-    Returns:
-        np.ndarray: Ảnh mới đã vẽ khung.
-    """
+    """Vẽ bounding box của các ROI lên ảnh BGR."""
     result = image_bgr.copy()
     for r in rois:
         x, y, w, h = r["bounding_box"]
@@ -214,174 +196,79 @@ def draw_rois(
 
 
 def compute_proposal_quality_score(item: Dict[str, Any]) -> float:
-    """Tính Proposal Quality Score (PQS) dựa trên bằng chứng đa nguồn và tính hợp lý hình học.
-
-    Điểm số cao hơn phản ánh ứng viên được đồng thời xác nhận bởi nhiều kỹ thuật độc lập
-    (màu sắc HSV, tính ổn định MSER, biên Canny Hull, và hình dạng Hough Circle / PolyDP).
-
-    Args:
-        item (Dict[str, Any]): Từ điển thông tin vùng ứng viên.
-
-    Returns:
-        float: Điểm chất lượng đề xuất PQS >= 0.01.
-    """
-    sources = set(item.get("proposal_sources", []))
-    if not sources and item.get("source"):
-        sources.add(str(item["source"]).upper())
-
-    # Trọng số bằng chứng từng nguồn độc lập
-    weights = {
-        "HSV": 0.35,
-        "HSV_COLOR": 0.35,
-        "MSER": 0.25,
-        "CANNY_HULL": 0.20,
-        "EDGE_HULL": 0.20,
-        "CONTOUR": 0.20,
-        "HOUGH_CIRCLE": 0.40,
-        "CIRCLE": 0.40,
-        "POLYGON_TRIANGLE": 0.35,
-        "TRIANGLE": 0.35,
-        "POLYGON_RECTANGLE": 0.30,
-        "RECTANGLE": 0.30,
-    }
-
-    evidence_score = sum(weights.get(s, 0.15) for s in sources)
-    # Thưởng khi có nhiều nguồn độc lập cùng xác nhận (Multi-cue synergy)
-    if len(sources) >= 3:
-        evidence_score += 0.25
-    elif len(sources) == 2:
-        evidence_score += 0.12
-
-    # Đánh giá tỷ lệ khung hình (biển báo giao thông chuẩn thường gần 1.0 hoặc dạng chữ nhật chuẩn)
-    bx = item.get("bounding_box", [0, 0, 1, 1])
-    w, h = max(int(bx[2]), 1), max(int(bx[3]), 1)
-    ar = w / float(h)
-    ar_penalty = min(abs(1.0 - ar) * 0.1, 0.25)
-
-    # Đóng góp từ confidence nội bộ nếu có
-    conf = float(item.get("confidence", 0.0))
-    final_score = evidence_score + 0.2 * conf - ar_penalty
-    return max(round(float(final_score), 4), 0.01)
+    """Trả về điểm tin cậy của candidate (Giữ tương thích ngược)."""
+    return float(item.get("confidence", 1.0))
 
 
 def merge_candidates(
-    contour_items: List[Dict[str, Any]],
-    circle_items: List[Dict[str, Any]],
+    primary_items: List[Dict[str, Any]],
+    secondary_items: List[Dict[str, Any]],
     iou_dedup_threshold: Optional[float] = 0.45,
 ) -> List[Dict[str, Any]]:
-    """Gộp các ứng viên từ phân đoạn màu/MSER/Polygon và Hough Circle với cơ chế cộng dồn bằng chứng.
-
-    Khi hai ứng viên từ các nguồn khác nhau trùng lặp cao (IoU >= iou_dedup_threshold),
-    thay vì loại bỏ đơn thuần, thuật toán sẽ hợp nhất dấu vết nguồn gốc (proposal_sources)
-    và tính lại điểm Proposal Quality Score (PQS).
-
-    Args:
-        contour_items (List[Dict[str, Any]]): Danh sách từ phân đoạn contour/MSER/Polygon.
-        circle_items (List[Dict[str, Any]]): Danh sách từ Hough Circle.
-        iou_dedup_threshold (Optional[float]): Ngưỡng khử trùng lặp IoU. Mặc định 0.45.
-
-    Returns:
-        List[Dict[str, Any]]: Danh sách ứng viên đã gộp và gắn điểm chất lượng PQS.
-    """
-    merged: List[Dict[str, Any]] = []
-    for c in contour_items:
-        it = dict(c)
-        it.setdefault("source", "contour")
-        if "proposal_sources" not in it:
-            it["proposal_sources"] = [str(it["source"]).upper()]
-        it["proposal_score"] = compute_proposal_quality_score(it)
-        merged.append(it)
+    """Gộp các ứng viên từ nhiều bộ phát hiện với cơ chế khử trùng lặp IoU."""
+    merged: List[Dict[str, Any]] = [dict(it) for it in primary_items]
 
     if iou_dedup_threshold is None:
-        for circ in circle_items:
-            it = dict(circ)
-            it.setdefault("source", "circle")
-            if "proposal_sources" not in it:
-                it["proposal_sources"] = ["HOUGH_CIRCLE"]
-            it["proposal_score"] = compute_proposal_quality_score(it)
-            merged.append(it)
+        merged.extend([dict(it) for it in secondary_items])
         return merged
 
-    for circ in circle_items:
-        c_it = dict(circ)
-        c_it.setdefault("source", "circle")
-        if "proposal_sources" not in c_it:
-            c_it["proposal_sources"] = ["HOUGH_CIRCLE"]
-
-        bx = c_it["bounding_box"]
-        cbox = (bx[0], bx[1], bx[0] + bx[2], bx[1] + bx[3])
+    for sec in secondary_items:
+        s_it = dict(sec)
+        bx = s_it["bounding_box"]
+        sbox = (bx[0], bx[1], bx[0] + bx[2], bx[1] + bx[3])
 
         best_iou = 0.0
         best_match_idx = -1
         for idx, base_item in enumerate(merged):
             bb = base_item["bounding_box"]
             bbox = (bb[0], bb[1], bb[0] + bb[2], bb[1] + bb[3])
-            iou = compute_iou(cbox, bbox)
+            iou = compute_iou(sbox, bbox)
             if iou > best_iou:
                 best_iou = iou
                 best_match_idx = idx
 
         if best_iou >= iou_dedup_threshold and best_match_idx >= 0:
-            # Hợp nhất bằng chứng: Thêm HOUGH_CIRCLE vào nguồn gốc của candidate đã có
+            # Nếu trùng lặp cao, giữ lại thông tin đỉnh hoặc thuộc tính bổ trợ
             target = merged[best_match_idx]
-            combined_sources = list(
-                dict.fromkeys(target.get("proposal_sources", []) + c_it["proposal_sources"])
-            )
-            target["proposal_sources"] = combined_sources
-            if "vertices" in c_it and "vertices" not in target:
-                target["vertices"] = c_it["vertices"]
-            target["proposal_score"] = compute_proposal_quality_score(target)
+            if "vertices" in s_it and "vertices" not in target:
+                target["vertices"] = s_it["vertices"]
         else:
-            c_it["proposal_score"] = compute_proposal_quality_score(c_it)
-            merged.append(c_it)
+            merged.append(s_it)
 
     return merged
 
 
 def apply_nms(
-    items: List[Dict[str, Any]], iou_threshold: float = 0.5, prioritize_source: bool = False
+    items: List[Dict[str, Any]],
+    iou_threshold: float = 0.5,
+    prioritize_source: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Áp dụng thuật toán NMS (Non-Maximum Suppression) để lọc các ứng viên đè lên nhau.
+    """Áp dụng thuật toán NMS chuẩn để loại bỏ các bounding box đè lên nhau.
 
-    Sắp xếp các ứng viên theo thứ tự ưu tiên điểm số:
-    - Mặc định: Proposal Quality Score (hoặc Model Score nếu có) kết hợp diện tích.
-    - prioritize_source=True: Ưu tiên nguồn contour trước circle (legacy compatibility).
+    Sắp xếp ứng viên theo độ tin cậy mô hình (model_score / confidence) và diện tích.
 
     Args:
         items (List[Dict[str, Any]]): Danh sách ứng viên.
         iou_threshold (float): Ngưỡng IoU coi là chồng lấp. Mặc định 0.5.
-        prioritize_source (bool): Ưu tiên cứng nguồn contour hay dùng Proposal Quality Score. Mặc định False.
+        prioritize_source (bool): Giữ tương thích ngược.
 
     Returns:
-        List[Dict[str, Any]]: Danh sách các ứng viên duy nhất đã qua lọc.
+        List[Dict[str, Any]]: Danh sách các ứng viên duy nhất sau NMS.
     """
     if not items:
         return items
 
-    def score_of(it: Dict[str, Any]) -> Tuple[Any, ...]:
-        conf = float(it.get("confidence", 0.0))
+    def score_of(it: Dict[str, Any]) -> Tuple[float, int]:
+        conf = float(it.get("model_score", it.get("confidence", 0.0)))
         _, _, w, h = it["bounding_box"]
-        area = w * h
-        aspect_penalty = abs(1.0 - (w / float(h) if h > 0 else 1.0))
-
-        if prioritize_source:
-            source_priority = 1 if it.get("source") == "contour" else 0
-            return (source_priority, conf, area)
-
-        # Sử dụng Proposal Quality Score (PQS)
-        pqs = it.get("proposal_score")
-        if pqs is None:
-            pqs = compute_proposal_quality_score(it)
-
-        # Nếu sau bước phân loại SVM, model_score/confidence sẽ hỗ trợ xếp hạng
-        model_score = float(it.get("model_score", conf))
-        return (round(float(pqs) + 0.6 * model_score - 0.1 * aspect_penalty, 4), area)
+        return (conf, w * h)
 
     scored = []
     for it in items:
         x, y, w, h = it["bounding_box"]
         scored.append((it, (x, y, x + w, y + h), score_of(it)))
 
+    # Sắp xếp giảm dần theo điểm tin cậy, sau đó là diện tích
     scored.sort(key=lambda t: t[2], reverse=True)
 
     kept: List[Dict[str, Any]] = []

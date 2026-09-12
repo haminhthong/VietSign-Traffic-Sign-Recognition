@@ -1,6 +1,6 @@
 """Công Cụ Benchmark Độc Lập Dự Án VietSign Vision (Independent Benchmark Tool).
 
-Đánh giá thực tế các chỉ số cốt lõi trên tập Test khóa (Locked Test Set):
+Đánh giá thực tế các chỉ số cốt lõi trên tập Test độc lập:
 1. Candidate Proposal Engine: Proposal Recall@IoU0.5, Proposals/Image, FP Proposals/Image.
 2. Stage Funnel Evaluation: GT Signs -> Candidate Union -> ROI Filter -> Tier 1 Sign -> Tier 2 Correct Class.
 3. Size Slice Breakdown: Phân tích độ phủ theo diện tích biển (Small < 32x32, Medium 32x32-96x96, Large > 96x96).
@@ -480,9 +480,12 @@ def main():
     )
     if results.get("models_loaded"):
         e2e = results.get("end_to_end_metrics", {})
-        print(f"  - End-to-End Recall     : {e2e.get('e2e_recall', 0):.4f}")
-        print(f"  - End-to-End Precision  : {e2e.get('e2e_precision', 0):.4f}")
-        print(f"  - End-to-End F1         : {e2e.get('e2e_f1', 0):.4f}")
+        rec = e2e.get("e2e_recall")
+        prec = e2e.get("e2e_precision")
+        f1 = e2e.get("e2e_f1")
+        print(f"  - End-to-End Recall     : {rec if rec is not None else 0.0:.4f}")
+        print(f"  - End-to-End Precision  : {prec if prec is not None else 0.0:.4f}")
+        print(f"  - End-to-End F1         : {f1 if f1 is not None else 0.0:.4f}")
     else:
         print("  - End-to-End Recognition: Đang chờ mô hình SVM được huấn luyện.")
 

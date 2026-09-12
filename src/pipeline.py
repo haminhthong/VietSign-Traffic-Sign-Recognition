@@ -1,12 +1,14 @@
-"""Module Luồng Phân Loại & Phát Hiện Tổng Thể (End-to-End Pipeline).
+"""Module Luồng Phân Loại & Phát Hiện Hoàn Chỉnh (End-to-End Pipeline).
 
-Kết nối toàn bộ hệ thống VietSign Vision:
-1. Tiền xử lý ảnh (Median Filter + Dynamic CLAHE - Task 1)
-2. Trích xuất ứng viên (HSV + MSER + Canny Hull Union - Task 2)
-3. Xác minh hình học (Hough Circle + Tam giác/Tứ giác - Task 3)
-4. Lọc NMS & Trích xuất ROI (Task 4)
-5. Trích xuất đặc trưng HOG 1.764 chiều (Task 5)
-6. Phân loại 2 tầng SVM (Binary Sign/Bg -> Multiclass 52 Lớp - Task 6)
+Quy trình nhận dạng biển báo giao thông Việt Nam bằng Classical Computer Vision:
+1. Tiền xử lý ảnh: Khử nhiễu Median Filter + Cân bằng tương phản tự thích nghi (CLAHE trên kênh L).
+2. Phát hiện ứng viên (Candidate Generation): Phân đoạn màu HSV (Đỏ, Vàng, Xanh) + Lọc hình học (Contour Circularity & Polygons).
+3. Chuẩn hóa ROI (ROI Normalization): Cắt vùng, kiểm tra kích thước / tỷ lệ khung hình và chuẩn hóa $64 \\times 64$.
+4. Trích xuất đặc trưng HOG (Histogram of Oriented Gradients): Vector 1.764 chiều mô tả cạnh và hướng gradient.
+5. Phân loại 2 tầng SVM:
+   - Tầng 1: Binary SVM lọc bỏ vùng nền (Sign vs Background).
+   - Tầng 2: Multiclass SVM nhận diện chính xác 52 lớp biển báo.
+6. Hậu xử lý NMS (Non-Maximum Suppression): Loại bỏ trùng lặp và xuất kết quả.
 """
 
 from pathlib import Path
@@ -19,65 +21,56 @@ from PIL import Image, ImageDraw, ImageFont
 from src.classifier import load_model, predict_proba_safe
 from src.data_loader import load_config, load_image
 from src.feature_extraction import extract_hog_features
-from src.hough_detection import detect_circles, preprocess_for_hough
-from src.polygon_detection import detect_polygons, preprocess_for_polygon
-from src.preprocessing import preprocess_task1
-from src.roi_extraction import apply_nms, extract_rois, merge_candidates
-from src.segmentation import segment_task2
+from src.preprocessing import preprocess_image
+from src.roi_extraction import apply_nms, extract_rois
+from src.segmentation import generate_combined_mask, get_hsv_ranges
 from src.task2_union import build_union_boxes
-from src.utils import compute_iou
 
 
 def _resolve_project_path(path_value: Union[str, Path], project_root: Path) -> Path:
-    """Chuẩn hóa đường dẫn tương đối từ gốc dự án sang đường dẫn tuyệt đối."""
+    """Chuẩn hóa đường dẫn tương đối sang tuyệt đối từ gốc dự án."""
     path = Path(path_value).expanduser()
     return path if path.is_absolute() else (Path(project_root) / path).resolve()
 
 
 def _load_required_model(path_value: Union[str, Path], model_name: str) -> Tuple[Any, Any]:
-    """Nạp model bắt buộc và cung cấp lỗi có ngữ cảnh khi tệp chưa tồn tại."""
+    """Nạp model bắt buộc và cung cấp thông báo lỗi có ngữ cảnh."""
     model_path = Path(path_value)
     if not model_path.is_file():
         raise FileNotFoundError(
             f"Không tìm thấy {model_name} tại: {model_path}. "
-            "Vui lòng tải model hoặc chạy 06_task6_svm.ipynb."
+            "Vui lòng huấn luyện mô hình hoặc kiểm tra lại đường dẫn."
         )
     return load_model(model_path)
 
 
 def load_pipeline_models(params: Dict[str, Any]) -> Tuple[Any, Any, Any, Any]:
-    """Nạp hai model SVM đúng một lần để tái sử dụng khi xử lý nhiều ảnh."""
-    model_bin, scaler_bin = _load_required_model(
-        params["task6"]["model_bin_path"], "mô hình Tầng 1"
-    )
-    model_multi, scaler_multi = _load_required_model(
-        params["task6"]["model_multi_path"], "mô hình Tầng 2"
-    )
+    """Nạp hai model SVM (Binary và Multiclass) để tái sử dụng."""
+    clf_cfg = params.get("classifier", params.get("task6", {}))
+    model_bin, scaler_bin = _load_required_model(clf_cfg["model_bin_path"], "mô hình Tầng 1")
+    model_multi, scaler_multi = _load_required_model(clf_cfg["model_multi_path"], "mô hình Tầng 2")
     return model_bin, scaler_bin, model_multi, scaler_multi
 
 
 def load_pipeline_config(
     project_root: Optional[Union[str, Path]] = None,
 ) -> Tuple[Dict[str, Any], Path, Path]:
-    """Tải và chuẩn hóa cấu hình từ tệp config.yaml cho toàn bộ pipeline.
+    """Tải và chuẩn hóa cấu hình từ config.yaml cho toàn bộ pipeline.
 
-    Args:
-        project_root (Optional[Union[str, Path]]): Thư mục gốc dự án. Mặc định tự nhận diện.
-
-    Returns:
-        Tuple[Dict[str, Any], Path, Path]: (Tham số cấu hình pipeline, Đường dẫn gốc dự án, Đường dẫn tệp config).
+    Hỗ trợ cả schema sạch mới (preprocessing, candidate, shape, roi, hog, classifier)
+    và schema cũ (task1..task6) để đảm bảo tính tương thích ngược tuyệt đối.
     """
     cfg, project_root, config_path = load_config(project_root)
 
-    t1 = cfg.get("task1", {})
-    t2 = cfg.get("task2", {})
-    t2_union = cfg.get("task2_union", {})
-    t3_shape = cfg.get("task3_shape", {})
-    t4 = cfg.get("task4", {})
-    t5 = cfg.get("task5", {})
-    t6 = cfg.get("task6", {})
-    hog_cfg = t5.get("hog_params", {})
+    # Đọc theo schema mới hoặc fallback schema cũ
+    prep_cfg = cfg.get("preprocessing", cfg.get("task1", {}))
+    cand_cfg = cfg.get("candidate", cfg.get("task2_union", cfg.get("task2", {})))
+    shape_cfg = cfg.get("shape", cfg.get("task3_shape", {}))
+    roi_cfg = cfg.get("roi", cfg.get("task4", {}))
+    hog_cfg = cfg.get("hog", cfg.get("task5", {}).get("hog_params", cfg.get("task5", {})))
+    clf_cfg = cfg.get("classifier", cfg.get("task6", {}))
 
+    # Cấu hình ngưỡng HSV nếu có khai báo trực tiếp
     configured_hsv_ranges = None
     required_hsv_keys = {
         "red_lower1",
@@ -89,207 +82,171 @@ def load_pipeline_config(
         "blue_lower",
         "blue_upper",
     }
-    if required_hsv_keys.issubset(t2):
+    if required_hsv_keys.issubset(cand_cfg):
         configured_hsv_ranges = {
-            "red1": (list(t2["red_lower1"]), list(t2["red_upper1"])),
-            "red2": (list(t2["red_lower2"]), list(t2["red_upper2"])),
-            "yellow": (list(t2["yellow_lower"]), list(t2["yellow_upper"])),
-            "blue": (list(t2["blue_lower"]), list(t2["blue_upper"])),
+            "red1": (list(cand_cfg["red_lower1"]), list(cand_cfg["red_upper1"])),
+            "red2": (list(cand_cfg["red_lower2"]), list(cand_cfg["red_upper2"])),
+            "yellow": (list(cand_cfg["yellow_lower"]), list(cand_cfg["yellow_upper"])),
+            "blue": (list(cand_cfg["blue_lower"]), list(cand_cfg["blue_upper"])),
         }
-
-    default_circle = dict(dp=1.2, min_dist=30, param1=120, param2=40, min_radius=10, max_radius=100)
-    default_triangle = dict(
-        approx_eps_ratio=0.12, max_side_ratio=5.0, min_red_ratio=None, min_yellow_fill=0.0
-    )
-    default_rectangle = dict(approx_eps_ratio=0.1, min_extent=0.70, max_aspect=5.0, angle_tol=None)
 
     default_bin_path = project_root / "outputs" / "models" / "svm_binary.joblib"
     default_multi_path = project_root / "outputs" / "models" / "svm_multiclass.joblib"
 
     params = {
-        "task1": dict(
-            kernel_size=t1.get("median_kernel", 3),
-            tile_grid_size=tuple(t1.get("tile_grid_size", [8, 8])),
-        ),
-        "task2": dict(
-            debug_mask_set_number=t2.get("hsv_set", 1),
-            union_hsv_sets=bool(t2.get("union_hsv_sets", True)),
-            include_achromatic=bool(t2.get("include_achromatic", False)),
-            achromatic_dilate_ksize=int(t2.get("achromatic_dilate_ksize", 9)),
-            fill_holes=bool(t2.get("fill_holes", True)),
-            hsv_ranges=configured_hsv_ranges,
-        ),
-        "task2_union": dict(
-            nms_iou_thresh=t2_union.get("nms_iou_thresh", 0.4),
-            hsv_ar_range=tuple(t2_union.get("hsv_ar_range", [0.4, 2.5])),
-            hsv_min_extent=t2_union.get("hsv_min_extent", 0.25),
-            mser_ar_range=tuple(t2_union.get("mser_ar_range", [0.6, 1.6])),
-            mser_min_extent=t2_union.get("mser_min_extent", 0.2),
-            hsv_set=t2_union.get("hsv_set_used", 1),
-            mser_delta=t2_union.get("mser_delta_used", 5),
-            canny_low=t2_union.get("canny_low_used", 50),
-            canny_high=t2_union.get("canny_high_used", 150),
-        ),
-        "task3_shape": dict(
-            circle={**default_circle, **t3_shape.get("circle", {})},
-            triangle={**default_triangle, **t3_shape.get("triangle", {})},
-            rectangle={**default_rectangle, **t3_shape.get("rectangle", {})},
-        ),
-        "task4": dict(
-            min_w=t4.get("min_w", 10),
-            min_h=t4.get("min_h", 10),
-            min_aspect_ratio=t4.get("min_aspect_ratio", 0.4),
-            max_aspect_ratio=t4.get("max_aspect_ratio", 2.5),
-            resize=tuple(t4.get("resize", [64, 64])),
-            nms_iou_threshold=t4.get("nms_iou_threshold", 0.4),
-        ),
-        "task5": dict(
-            hog_params=dict(
-                orientations=hog_cfg.get("orientations", 9),
-                pixels_per_cell=tuple(hog_cfg.get("pixels_per_cell", [8, 8])),
-                cells_per_block=tuple(hog_cfg.get("cells_per_block", [2, 2])),
+        "preprocessing": {
+            "kernel_size": prep_cfg.get("median_kernel", 3),
+            "tile_grid_size": tuple(prep_cfg.get("tile_grid_size", [8, 8])),
+            "clip_limit": prep_cfg.get("clahe_clip_limit", 2.0),
+        },
+        "candidate": {
+            "min_area": cand_cfg.get("min_area", 150.0),
+            "max_area_ratio": cand_cfg.get("max_area_ratio", 0.35),
+            "aspect_ratio_range": tuple(
+                cand_cfg.get("aspect_ratio_range", cand_cfg.get("hsv_ar_range", [0.4, 2.5]))
             ),
-        ),
-        "task6": dict(
-            model_bin_path=str(
-                _resolve_project_path(t6.get("model_bin_path", default_bin_path), project_root)
+            "min_extent": cand_cfg.get("min_extent", cand_cfg.get("hsv_min_extent", 0.20)),
+            "nms_iou_threshold": cand_cfg.get(
+                "nms_iou_threshold", cand_cfg.get("nms_iou_thresh", 0.4)
             ),
-            model_multi_path=str(
-                _resolve_project_path(t6.get("model_multi_path", default_multi_path), project_root)
+            "hsv_ranges": configured_hsv_ranges,
+        },
+        "shape": {
+            "min_circularity": shape_cfg.get("min_circularity", 0.65),
+            "triangle_min_angle": shape_cfg.get("triangle_min_angle", 12.0),
+            "triangle_max_side_ratio": shape_cfg.get("triangle_max_side_ratio", 4.0),
+            "rectangle_min_extent": shape_cfg.get("rectangle_min_extent", 0.65),
+            "rectangle_max_aspect": shape_cfg.get("rectangle_max_aspect", 2.5),
+        },
+        "roi": {
+            "min_w": roi_cfg.get("min_w", 12),
+            "min_h": roi_cfg.get("min_h", 12),
+            "min_aspect_ratio": roi_cfg.get("min_aspect_ratio", 0.4),
+            "max_aspect_ratio": roi_cfg.get("max_aspect_ratio", 2.5),
+            "resize": tuple(roi_cfg.get("resize", [64, 64])),
+            "nms_iou_threshold": roi_cfg.get("nms_iou_threshold", 0.4),
+        },
+        "hog": {
+            "orientations": hog_cfg.get("orientations", 9),
+            "pixels_per_cell": tuple(hog_cfg.get("pixels_per_cell", [8, 8])),
+            "cells_per_block": tuple(hog_cfg.get("cells_per_block", [2, 2])),
+        },
+        "classifier": {
+            "model_bin_path": str(
+                _resolve_project_path(clf_cfg.get("model_bin_path", default_bin_path), project_root)
             ),
-            bin_confidence_threshold=t6.get("bin_thr", t6.get("bin_confidence_threshold", 0.20)),
-            multi_confidence_threshold=t6.get(
-                "multi_thr", t6.get("multi_confidence_threshold", 0.15)
+            "model_multi_path": str(
+                _resolve_project_path(
+                    clf_cfg.get("model_multi_path", default_multi_path), project_root
+                )
             ),
-        ),
+            "bin_confidence_threshold": clf_cfg.get(
+                "bin_confidence_threshold", clf_cfg.get("bin_thr", 0.5)
+            ),
+            "multi_confidence_threshold": clf_cfg.get(
+                "multi_confidence_threshold", clf_cfg.get("multi_thr", 0.3)
+            ),
+        },
     }
+
+    # Bổ sung các key task cũ để tương thích ngược 100% với mã gọi ngoài
+    params["task1"] = params["preprocessing"]
+    params["task2"] = {
+        "hsv_ranges": configured_hsv_ranges,
+        "debug_mask_set_number": 1,
+        "union_hsv_sets": False,
+    }
+    params["task2_union"] = {
+        "nms_iou_thresh": params["candidate"]["nms_iou_threshold"],
+        "hsv_ar_range": params["candidate"]["aspect_ratio_range"],
+        "hsv_min_extent": params["candidate"]["min_extent"],
+        "hsv_set": 1,
+        "mser_delta": 5,
+        "canny_low": 50,
+        "canny_high": 150,
+    }
+    params["task3_shape"] = {
+        "circle": {"min_circularity": params["shape"]["min_circularity"]},
+        "triangle": {"min_angle_deg": params["shape"]["triangle_min_angle"]},
+        "rectangle": {"min_extent": params["shape"]["rectangle_min_extent"]},
+    }
+    params["task4"] = params["roi"]
+    params["task5"] = {"hog_params": params["hog"]}
+    params["task6"] = params["classifier"]
+
     return params, project_root, config_path
 
 
 def process_image_to_rois(
     image_bgr: np.ndarray, params: Dict[str, Any]
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Chạy tiền xử lý và trích xuất danh sách ROI ứng viên (Phục vụ cả --detect-only).
+    """Tiền xử lý và trích xuất danh sách ROI ứng viên (Phục vụ cả chế độ --detect-only).
 
-    Args:
-        image_bgr (np.ndarray): Ảnh BGR gốc.
-        params (Dict[str, Any]): Tham số cấu hình pipeline.
-
-    Returns:
-        Tuple[...]: (enhanced_image, debug_mask, union_components, valid_rois, rejected_rois).
+    Quy trình:
+    1. Tiền xử lý (Median Filter + LAB CLAHE).
+    2. Phân đoạn màu HSV tạo mặt nạ màu biển báo.
+    3. Tìm contours và lọc sơ bộ theo diện tích, tỷ lệ khung hình.
+    4. Cắt và xác thực ROI, áp dụng NMS.
     """
     if image_bgr is None or image_bgr.size == 0:
         raise ValueError("Ảnh đầu vào rỗng")
 
-    enhanced = preprocess_task1(image_bgr, **params["task1"])
-    union_nms_thr = params["task2_union"].get("nms_iou_thresh", 0.4)
+    prep = params.get("preprocessing", params.get("task1", {}))
+    enhanced = preprocess_image(
+        image_bgr,
+        kernel_size=prep.get("kernel_size", 3),
+        tile_grid_size=prep.get("tile_grid_size", (8, 8)),
+        clip_limit=prep.get("clip_limit", 2.0),
+    )
 
-    hsv_set = params["task2_union"]["hsv_set"]
-    if params["task2"].get("union_hsv_sets"):
-        hsv_set = sorted(set([int(hsv_set), 2 if int(hsv_set) != 2 else 1]))
+    cand = params.get("candidate", params.get("task2_union", {}))
+    hsv_ranges = cand.get("hsv_ranges")
+    iou_thresh = cand.get("nms_iou_threshold", cand.get("nms_iou_thresh", 0.4))
+    ar_range = cand.get("aspect_ratio_range", cand.get("hsv_ar_range", (0.4, 2.5)))
+    min_extent = cand.get("min_extent", cand.get("hsv_min_extent", 0.20))
 
     union_boxes, union_components = build_union_boxes(
         enhanced,
-        iou_thresh=union_nms_thr,
-        hsv_set=hsv_set,
-        mser_delta=params["task2_union"]["mser_delta"],
-        canny_low=params["task2_union"]["canny_low"],
-        canny_high=params["task2_union"]["canny_high"],
-        hsv_ar_range=params["task2_union"]["hsv_ar_range"],
-        hsv_min_extent=params["task2_union"]["hsv_min_extent"],
-        mser_ar_range=params["task2_union"]["mser_ar_range"],
-        mser_min_extent=params["task2_union"]["mser_min_extent"],
-        hsv_ranges=params["task2"].get("hsv_ranges"),
+        iou_thresh=iou_thresh,
+        hsv_ar_range=ar_range,
+        hsv_min_extent=min_extent,
+        hsv_ranges=hsv_ranges,
     )
-    contour_items: List[Dict[str, Any]] = []
-    hsv_list = union_components.get("hsv", [])
-    mser_list = union_components.get("mser", [])
-    edge_list = union_components.get("edge_hull", [])
 
+    candidate_items: List[Dict[str, Any]] = []
     for x, y, w, h in union_boxes:
-        box_xyxy = (x, y, x + w, y + h)
-        sources: List[str] = []
-        if any(
-            compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in hsv_list
-        ):
-            sources.append("HSV")
-        if any(
-            compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in mser_list
-        ):
-            sources.append("MSER")
-        if any(
-            compute_iou(box_xyxy, (b[0], b[1], b[0] + b[2], b[1] + b[3])) >= 0.25 for b in edge_list
-        ):
-            sources.append("CANNY_HULL")
-        if not sources:
-            sources.append("CONTOUR")
-
-        contour_items.append(
+        candidate_items.append(
             {
                 "bounding_box": [x, y, w, h],
-                "source": sources[0].lower(),
-                "proposal_sources": sources,
+                "source": "color_contour",
             }
         )
 
-    debug_set_number = params["task2"]["debug_mask_set_number"]
-    include_achromatic = params["task2"].get("include_achromatic", False)
-    dilate_k = params["task2"].get("achromatic_dilate_ksize", 9)
-    fill_holes = params["task2"].get("fill_holes", True)
-    _, mask_debug = segment_task2(
-        enhanced,
-        set_number=debug_set_number,
-        include_achromatic=include_achromatic,
-        achromatic_dilate_ksize=dilate_k,
-        fill_holes=fill_holes,
-        ranges=(params["task2"].get("hsv_ranges") if int(debug_set_number) == 1 else None),
-    )
-    if params["task2"].get("union_hsv_sets"):
-        other = 2 if debug_set_number != 2 else 1
-        _, mask2 = segment_task2(
-            enhanced, set_number=other, include_achromatic=False, fill_holes=fill_holes
-        )
-        mask_debug = cv2.bitwise_or(mask_debug, mask2)
+    # Mặt nạ nhị phân phục vụ debug và hiển thị trực quan
+    hsv = cv2.cvtColor(enhanced, cv2.COLOR_BGR2HSV)
+    ranges = hsv_ranges if hsv_ranges is not None else get_hsv_ranges(1)
+    mask_debug, _, _, _ = generate_combined_mask(hsv, ranges)
 
-    gray_hough = preprocess_for_hough(enhanced)
-    circle_items = detect_circles(gray_hough, image_bgr=enhanced, **params["task3_shape"]["circle"])
-    for c in circle_items:
-        c["proposal_sources"] = ["HOUGH_CIRCLE"]
-
-    gray_poly = preprocess_for_polygon(enhanced)
-    triangle_items = detect_polygons(
-        gray_poly, image_bgr=enhanced, target_sides=3, **params["task3_shape"]["triangle"]
-    )
-    for t in triangle_items:
-        t["proposal_sources"] = ["POLYGON_TRIANGLE"]
-
-    rectangle_items = detect_polygons(
-        gray_poly, image_bgr=enhanced, target_sides=4, **params["task3_shape"]["rectangle"]
-    )
-    for r in rectangle_items:
-        r["proposal_sources"] = ["POLYGON_RECTANGLE"]
-
-    shape_items = circle_items + triangle_items + rectangle_items
-
-    nms_thr = params["task4"].get("nms_iou_threshold", 0.4)
-    merged_items = merge_candidates(contour_items, shape_items, iou_dedup_threshold=0.45)
-    merged_items = apply_nms(merged_items, iou_threshold=nms_thr, prioritize_source=False)
-
+    roi_cfg = params.get("roi", params.get("task4", {}))
     rois, rejected = extract_rois(
         enhanced,
-        merged_items,
-        min_w=params["task4"]["min_w"],
-        min_h=params["task4"]["min_h"],
-        min_aspect_ratio=params["task4"]["min_aspect_ratio"],
-        max_aspect_ratio=params["task4"]["max_aspect_ratio"],
+        candidate_items,
+        min_w=roi_cfg.get("min_w", 12),
+        min_h=roi_cfg.get("min_h", 12),
+        min_aspect_ratio=roi_cfg.get("min_aspect_ratio", 0.4),
+        max_aspect_ratio=roi_cfg.get("max_aspect_ratio", 2.5),
     )
+
+    # Áp dụng NMS để làm sạch các vùng ứng viên đè lên nhau
+    rois = apply_nms(rois, iou_threshold=roi_cfg.get("nms_iou_threshold", 0.4))
+
     return enhanced, mask_debug, union_components, rois, rejected
 
 
 def _binary_sign_proba(
     clf_bin: Any, scaler_bin: Any, feats: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Tính xác suất vùng ROI là biển báo (Sign proba) từ Binary SVM Tầng 1."""
+    """Tính xác suất vùng ROI là biển báo từ Binary SVM Tầng 1."""
     X = scaler_bin.transform(feats)
     pred = clf_bin.predict(X)
     if hasattr(clf_bin, "predict_proba"):
@@ -301,9 +258,9 @@ def _binary_sign_proba(
             else:
                 p_sign = proba.max(axis=1)
             return p_sign, pred
-        except (AttributeError, ValueError):
-            # Nếu model không hỗ trợ xác suất, dùng fallback thống nhất bên dưới.
+        except Exception:
             pass
+
     labels, conf = predict_proba_safe(clf_bin, scaler_bin, feats)
     p_sign = np.where(labels == 1, conf, 1.0 - conf)
     return p_sign, labels
@@ -317,38 +274,36 @@ def classify_rois(
     clf_multi: Any,
     scaler_multi: Any,
 ) -> List[Dict[str, Any]]:
-    """Trích xuất HOG và thực hiện phân loại 2 tầng SVM cho các ROI ứng viên.
+    """Trích xuất HOG và phân loại 2 tầng SVM cho danh sách ROI ứng viên.
 
-    Tầng 1 (Binary SVM): Lọc bỏ các vùng nền (Background, label 0).
-    Tầng 2 (Multiclass SVM): Phân loại lớp biển báo (52 lớp, label 0..51).
-
-    Args:
-        rois (List[Dict[str, Any]]): Danh sách các ROI hợp lệ.
-        params (Dict[str, Any]): Tham số cấu hình.
-        clf_bin (Any): Mô hình Binary SVM.
-        scaler_bin (Any): Scaler Tầng 1.
-        clf_multi (Any): Mô hình Multiclass SVM.
-        scaler_multi (Any): Scaler Tầng 2.
-
-    Returns:
-        List[Dict[str, Any]]: Danh sách kết quả phát hiện biển báo cuối cùng.
+    Tầng 1 (Binary SVM): Lọc bỏ các vùng nền gây báo giả (nhãn 0: background, 1: sign).
+    Tầng 2 (Multiclass SVM): Nhận diện cụ thể lớp biển báo (52 lớp).
     """
     if not rois:
         return []
 
-    resize_to = params["task4"]["resize"]
-    hog_params = params["task5"]["hog_params"]
-    bin_thr = params["task6"]["bin_confidence_threshold"]
-    multi_thr = params["task6"]["multi_confidence_threshold"]
+    roi_cfg = params.get("roi", params.get("task4", {}))
+    hog_cfg = params.get("hog", params.get("task5", {}).get("hog_params", {}))
+    clf_cfg = params.get("classifier", params.get("task6", {}))
+
+    resize_to = roi_cfg.get("resize", (64, 64))
+    bin_thr = clf_cfg.get("bin_confidence_threshold", 0.5)
+    multi_thr = clf_cfg.get("multi_confidence_threshold", 0.3)
 
     feats = []
     for roi in rois:
         hog_feat, _ = extract_hog_features(
-            roi["crop"], resize_to=resize_to, visualize=False, **hog_params
+            roi["crop"],
+            resize_to=resize_to,
+            visualize=False,
+            orientations=hog_cfg.get("orientations", 9),
+            pixels_per_cell=hog_cfg.get("pixels_per_cell", (8, 8)),
+            cells_per_block=hog_cfg.get("cells_per_block", (2, 2)),
         )
         feats.append(hog_feat)
     feats_arr = np.array(feats)
 
+    # Tầng 1: Lọc nền
     p_sign, _ = _binary_sign_proba(clf_bin, scaler_bin, feats_arr)
     sign_mask = p_sign >= bin_thr
     sign_idx = np.where(sign_mask)[0]
@@ -356,6 +311,7 @@ def classify_rois(
     if len(sign_idx) == 0:
         return []
 
+    # Tầng 2: Nhận diện 52 lớp
     pred_multi, conf_multi = predict_proba_safe(clf_multi, scaler_multi, feats_arr[sign_idx])
 
     results: List[Dict[str, Any]] = []
@@ -367,18 +323,13 @@ def classify_rois(
             {
                 "bounding_box": roi_item["bounding_box"],
                 "predicted_class": int(pred_class),
-                "model_score": float(conf),
                 "confidence": float(conf),
-                "bin_model_score": float(p_sign[idx]),
                 "bin_confidence": float(p_sign[idx]),
-                "proposal_sources": roi_item.get("proposal_sources", []),
-                "proposal_score": roi_item.get("proposal_score"),
             }
         )
 
-    final_thr = params["task4"].get("nms_iou_threshold", 0.4)
-    results = apply_nms(results, iou_threshold=final_thr, prioritize_source=False)
-
+    final_iou_thr = roi_cfg.get("nms_iou_threshold", 0.4)
+    results = apply_nms(results, iou_threshold=final_iou_thr)
     return results
 
 
@@ -394,7 +345,7 @@ def run_pipeline_on_image(
     Tuple[np.ndarray, np.ndarray, List[Dict[str, Any]]],
     Tuple[np.ndarray, np.ndarray, List[Dict[str, Any]], Dict[str, Any]],
 ]:
-    """Chạy quy trình nhận dạng biển báo giao thông hoàn chỉnh (End-to-End Pipeline) cho một ảnh.
+    """Chạy quy trình nhận dạng biển báo hoàn chỉnh cho một ảnh.
 
     Args:
         image_path (Union[str, Path]): Đường dẫn tệp ảnh.
@@ -406,22 +357,17 @@ def run_pipeline_on_image(
         return_debug (bool): Có trả về thông tin debug hay không.
 
     Returns:
-        Tuple: (Ảnh đã tăng cường, Mặt nạ debug, Danh sách biển báo phát hiện được, [Tùy chọn: Debug Info]).
-
-    Raises:
-        FileNotFoundError: Nếu tệp mô hình không tồn tại.
-        ValueError: Nếu ảnh không thể nạp.
+        Tuple: (Ảnh đã tăng cường, Mặt nạ nhị phân, Danh sách biển báo phát hiện được, [Debug Info]).
     """
     params, project_root, _ = load_pipeline_config(project_root)
+    clf_cfg = params.get("classifier", params.get("task6", {}))
 
     if model_bin is None or scaler_bin is None:
-        model_bin, scaler_bin = _load_required_model(
-            params["task6"]["model_bin_path"], "mô hình Tầng 1"
-        )
+        model_bin, scaler_bin = _load_required_model(clf_cfg["model_bin_path"], "mô hình Tầng 1")
 
     if model_multi is None or scaler_multi is None:
         model_multi, scaler_multi = _load_required_model(
-            params["task6"]["model_multi_path"], "mô hình Tầng 2"
+            clf_cfg["model_multi_path"], "mô hình Tầng 2"
         )
 
     image_bgr = load_image(image_path)
@@ -435,13 +381,10 @@ def run_pipeline_on_image(
 
     if return_debug:
         debug_info = {
-            "union_components": union_components,
+            "rois_extracted": len(rois),
+            "rois_rejected": len(rejected),
+            "final_detections": len(detections),
             "rejected_rois": rejected,
-            "stage_funnel": {
-                "rois_extracted": len(rois),
-                "rois_rejected": len(rejected),
-                "final_detections": len(detections),
-            },
         }
         return enhanced, mask_debug, detections, debug_info
 
@@ -452,7 +395,7 @@ _VN_FONT_CACHE: Dict[int, ImageFont.FreeTypeFont] = {}
 
 
 def _get_vn_font(size: int = 18) -> Union[ImageFont.FreeTypeFont, ImageFont.ImageFont]:
-    """Lấy phông chữ hỗ trợ gõ Tiếng Việt trên Windows / Linux / macOS."""
+    """Lấy phông chữ hỗ trợ gõ Tiếng Việt Unicode."""
     if size in _VN_FONT_CACHE:
         return _VN_FONT_CACHE[size]
     candidates = [
@@ -467,7 +410,6 @@ def _get_vn_font(size: int = 18) -> Union[ImageFont.FreeTypeFont, ImageFont.Imag
                 font = ImageFont.truetype(path, size)
                 break
             except OSError:
-                # Bỏ qua font lỗi và thử ứng viên tiếp theo.
                 pass
     if font is None:
         font = ImageFont.load_default()
@@ -484,17 +426,7 @@ def draw_detections(
     class_names: Optional[List[str]] = None,
     color: Tuple[int, int, int] = (0, 255, 0),
 ) -> np.ndarray:
-    """Vẽ bounding box và nhãn lớp (Tiếng Việt/Anh) có độ tin cậy lên ảnh BGR.
-
-    Args:
-        image_bgr (np.ndarray): Ảnh BGR gốc.
-        detections (List[Dict[str, Any]]): Danh sách phát hiện từ classify_rois.
-        class_names (Optional[List[str]]): Danh sách tên lớp theo ID.
-        color (Tuple[int, int, int]): Màu BGR cho bounding box (Mặc định xanh lá).
-
-    Returns:
-        np.ndarray: Ảnh BGR đã vẽ thông tin nhận diện.
-    """
+    """Vẽ bounding box và nhãn lớp lên ảnh BGR."""
     img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
     pil_img = Image.fromarray(img_rgb)
     draw = ImageDraw.Draw(pil_img)
@@ -520,16 +452,7 @@ def draw_candidates(
     candidates: List[Dict[str, Any]],
     color: Tuple[int, int, int] = (0, 200, 255),
 ) -> np.ndarray:
-    """Vẽ các hộp ứng viên phục vụ chế độ demo chỉ phát hiện (--detect-only).
-
-    Args:
-        image_bgr (np.ndarray): Ảnh BGR gốc.
-        candidates (List[Dict[str, Any]]): Danh sách ứng viên.
-        color (Tuple[int, int, int]): Màu nét vẽ (BGR). Mặc định da cam.
-
-    Returns:
-        np.ndarray: Ảnh BGR mới đã vẽ khung ứng viên.
-    """
+    """Vẽ các hộp ứng viên phục vụ chế độ demo chỉ phát hiện (--detect-only)."""
     result = image_bgr.copy()
     for candidate in candidates:
         x, y, w, h = candidate["bounding_box"]

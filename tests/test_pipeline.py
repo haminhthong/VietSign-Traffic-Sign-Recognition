@@ -81,6 +81,8 @@ class TestPipelineAndClassifier(unittest.TestCase):
     def test_load_pipeline_models_reports_missing_files(self):
         """Kiểm tra lỗi thiếu model có ngữ cảnh thay vì lỗi Joblib khó hiểu."""
         params, _, _ = load_pipeline_config()
+        params["classifier"]["model_bin_path"] = "non_existent_model_123.joblib"
+        params["task6"]["model_bin_path"] = "non_existent_model_123.joblib"
         with self.assertRaisesRegex(FileNotFoundError, "mô hình Tầng 1"):
             load_pipeline_models(params)
 
